@@ -42,29 +42,6 @@ docker-compose up --build
 ```
 Access the Dashboard at: **`http://localhost:5173`**
 
----
-
-## 💻 Manual Setup
-
-If you prefer to run the components separately:
-
-### Backend (Flask)
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-*Runs at `http://localhost:5000`*
-
-### Frontend (React + Vite)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-*Runs at `http://localhost:5173`*
-
----
 
 ## ⚙️ Tech Stack
 
