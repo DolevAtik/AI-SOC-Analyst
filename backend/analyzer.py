@@ -14,20 +14,26 @@ def call_gemini(prompt: str) -> str:
     if not api_key:
         raise Exception("API key not configured.")
         
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     data = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 429:
-        raise Exception("API rate limit exceeded (Quota Exhausted). Please wait a moment before asking again or check your Gemini plan.")
-    elif response.status_code != 200:
-        raise Exception(f"AI Provider Error ({response.status_code})")
-        
-    result = response.json()
     try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 429:
+            raise Exception("API rate limit exceeded (Quota Exhausted). Please wait a moment before asking again or check your Gemini plan.")
+        elif response.status_code != 200:
+            error_data = response.json() if response.content else "No content"
+            print(f"Gemini API Error: {response.status_code} - {error_data}")
+            raise Exception(f"AI Provider Error ({response.status_code})")
+            
+        result = response.json()
         return result['candidates'][0]['content']['parts'][0]['text']
-    except (KeyError, IndexError):
+    except requests.exceptions.RequestException as e:
+        print(f"Request Error calling Gemini: {str(e)}")
+        raise Exception(f"Connection Error to AI Provider: {str(e)}")
+    except (KeyError, IndexError, json.JSONDecodeError) as e:
+        print(f"Parsing Error from Gemini: {str(e)}")
         raise Exception("Unexpected response format from Gemini API.")
 
 
