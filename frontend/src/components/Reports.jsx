@@ -17,15 +17,14 @@ function formatDate(ts) {
 
 function exportExcel(data) {
   const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const headers = ['Severity','Threat Type','Source IP','Summary','Recommended Action','Timestamp'];
-  const widths  = [80, 160, 115, 460, 340, 145];
+  const headers = ['Severity','Threat Type','Source IP','Summary','Recommended Action'];
+  const widths  = [80, 160, 115, 520, 380];
   const rows = data.map(i => [
     i.severity || '',
     i.threat_type || '',
     i.source_ip || '',
     i.summary || '',
     i.recommended_action || '',
-    i.detected_at ? new Date(i.detected_at).toLocaleString('en-US', { dateStyle:'short', timeStyle:'short' }) : '',
   ]);
   const colsHtml = widths.map(w => `<col width="${w}px">`).join('');
   const headHtml = headers.map(h =>
