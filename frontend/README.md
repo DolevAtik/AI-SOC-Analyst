@@ -31,3 +31,17 @@ This is the React-based dashboard for the AI SOC Analyst. It features a premium 
 - `src/api.js` — Backend communication layer
 - `src/index.css` — Global styles and design tokens
 
+---
+
+## הרצה דרך Docker
+
+ניתן למשוך את תמונת ה-frontend מה-Docker Hub ולהריץ יחד עם ה-backend:
+
+```bash
+docker pull dolevatik/soc-analyst-frontend:latest
+docker pull dolevatik/soc-analyst-backend:latest
+docker compose up
+```
+
+ה-frontend יהיה זמין לאחר מכן בכתובת הנחושה על ידי `docker compose` (בדרך כלל `http://localhost:5173`).
+

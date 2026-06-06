@@ -195,3 +195,19 @@ Developed by **Dolev Atik**
 ## License
 
 MIT
+
+---
+
+## הרצה דרך Docker
+
+התמונות של הפרויקט פורסמו ל-Docker Hub וניתן למשוך ולהריץ אותן בקלות:
+
+```bash
+docker pull dolevatik/soc-analyst-backend:latest
+docker pull dolevatik/soc-analyst-frontend:latest
+docker compose up
+```
+
+לאחר הרצת `docker compose up` השירותים יהיו זמינים מקומית (הגדרות ברירת מחדל):
+- Backend: http://localhost:5000
+- Frontend: http://localhost:5173
