@@ -153,6 +153,36 @@ function LoginPage() {
             {loading ? 'Please wait...' : isSignUp ? 'Create Account' : 'Sign In'}
           </button>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ flex: 1, height: '1px', background: 'var(--border-primary)' }} />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>or</span>
+            <div style={{ flex: 1, height: '1px', background: 'var(--border-primary)' }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => supabase.auth.signInWithOAuth({
+              provider: 'google',
+              options: { redirectTo: window.location.origin },
+            })}
+            style={{
+              background: 'none',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 'var(--radius-md)',
+              padding: '11px',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <img src="https://www.google.com/favicon.ico" width="16" height="16" alt="" />
+            Continue with Google
+          </button>
+
           <button
             type="button"
             onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage(''); }}
