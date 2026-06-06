@@ -53,7 +53,7 @@ if _MODE == "postgres":
 else:
     import sqlite3
 
-    DB_PATH = os.path.join(os.path.dirname(__file__), "soc_analyst.db")
+    DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "soc_analyst.db"))
 
     def get_connection():
         conn = sqlite3.connect(DB_PATH)

@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   backend:
     build:
@@ -8,11 +6,18 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./backend:/app
-      - backend-data:/app/data
+      - soc-db:/app/data
+    env_file:
+      - ./backend/.env
     environment:
-      - FLASK_ENV=development
-      - FLASK_APP=app.py
+      - CORS_ORIGINS=http://localhost
+      - DB_PATH=/app/data/soc_analyst.db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   frontend:
@@ -20,14 +25,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend/src:/app/src
+      - "80:80"
+    env_file:
+      - ./frontend/.env
     depends_on:
-      - backend
-    environment:
-      - VITE_API_URL=http://backend:5000
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  backend-data:
+  soc-db:

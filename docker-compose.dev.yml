@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - ./backend:/app
+      - soc-db:/app/data
+    environment:
+      - FLASK_ENV=development
+      - CORS_ORIGINS=http://localhost:5173
+      - DB_PATH=/app/data/soc_analyst.db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    environment:
+      - BACKEND_URL=http://backend:5000
+    depends_on:
+      - backend
+
+volumes:
+  soc-db:
