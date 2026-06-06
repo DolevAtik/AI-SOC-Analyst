@@ -430,5 +430,6 @@ def parse_real_logs():
 
 
 if __name__ == "__main__":
-    logger.info("AI SOC Analyst API starting on port 5000")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+    port = int(os.getenv("PORT", 5000))
+    logger.info("AI SOC Analyst API starting on port %d", port)
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
