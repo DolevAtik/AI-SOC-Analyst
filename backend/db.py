@@ -209,7 +209,8 @@ def get_stats():
     cur = _cursor(conn)
 
     cur.execute("SELECT COUNT(*) AS count FROM incidents")
-    total = (cur.fetchone() or {}).get("count", 0)
+    row = cur.fetchone()
+    total = row["count"] if row else 0
 
     cur.execute("SELECT severity, COUNT(*) AS count FROM incidents GROUP BY severity")
     by_severity = {row["severity"]: row["count"] for row in cur.fetchall()}
@@ -218,7 +219,8 @@ def get_stats():
     by_type = {row["threat_type"]: row["count"] for row in cur.fetchall()}
 
     cur.execute(f"SELECT COUNT(*) AS count FROM incidents WHERE created_at >= {LAST_HOUR}")
-    recent = (cur.fetchone() or {}).get("count", 0)
+    row = cur.fetchone()
+    recent = row["count"] if row else 0
 
     cur.close()
     release_connection(conn)
