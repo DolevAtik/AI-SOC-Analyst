@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { healthCheck } from '../api';
+import { healthCheck, getBlocklist, updateBlocklist } from '../api';
 
 const DEFAULTS = {
   bruteForceThreshold: 5,
@@ -69,15 +69,40 @@ function Toggle({ value, onChange }) {
 export default function Settings() {
   const [cfg, setCfg] = useState(loadSettings);
   const [saved, setSaved] = useState(false);
+  const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'ok' | 'error'
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(false);
 
   const set = (key, val) => setCfg(prev => ({ ...prev, [key]: val }));
 
-  const save = () => {
+  // Load live blocklist from backend on mount
+  useEffect(() => {
+    getBlocklist()
+      .then(res => {
+        if (res.ips && res.ips.length > 0) {
+          setCfg(prev => ({ ...prev, blockedIPs: res.ips.join('\n') }));
+        }
+      })
+      .catch(() => {}); // silently fall back to localStorage value
+  }, []);
+
+  const save = async () => {
+    // 1. Persist UI prefs to localStorage
     localStorage.setItem('soc_settings', JSON.stringify(cfg));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+
+    // 2. Push blocklist to backend
+    setSyncStatus('syncing');
+    try {
+      const ips = cfg.blockedIPs.split('\n').map(l => l.trim()).filter(Boolean);
+      await updateBlocklist(ips);
+      setSyncStatus('ok');
+    } catch {
+      setSyncStatus('error');
+    } finally {
+      setTimeout(() => setSyncStatus(null), 3000);
+    }
   };
 
   const reset = () => { setCfg({ ...DEFAULTS }); localStorage.removeItem('soc_settings'); };
@@ -112,6 +137,27 @@ export default function Settings() {
           </button>
         </div>
       </div>
+      {/* Sync status banner */}
+      {syncStatus && (
+        <div style={{
+          padding: '10px 16px', marginBottom: 16, borderRadius: 'var(--radius-sm)',
+          fontSize: '0.82rem', fontWeight: 500,
+          background: syncStatus === 'ok'
+            ? 'rgba(52,211,153,0.1)' : syncStatus === 'error'
+            ? 'rgba(255,45,85,0.1)' : 'rgba(0,240,255,0.08)',
+          border: `1px solid ${
+            syncStatus === 'ok' ? 'rgba(52,211,153,0.25)'
+            : syncStatus === 'error' ? 'rgba(255,45,85,0.25)'
+            : 'rgba(0,240,255,0.2)'}`,
+          color: syncStatus === 'ok' ? 'var(--color-low)'
+            : syncStatus === 'error' ? 'var(--color-critical)'
+            : 'var(--accent-cyan)',
+        }}>
+          {syncStatus === 'syncing' && '⏳ Syncing blocklist to backend…'}
+          {syncStatus === 'ok'      && '✅ Blocklist synced to backend successfully.'}
+          {syncStatus === 'error'   && '❌ Failed to sync blocklist — is the backend running?'}
+        </div>
+      )}
 
       {/* Detection Thresholds */}
       <Section title="Detection Thresholds" icon="🔍">

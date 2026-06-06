@@ -2,6 +2,11 @@ flask==3.1.0
 flask-cors==5.0.1
 gunicorn==23.0.0
 flask-socketio
-eventlet
+flask-limiter
+gevent
+gevent-websocket
 python-dotenv
-google-generativeai
+anthropic
+PyJWT[crypto]
+psycopg2-binary
+requests

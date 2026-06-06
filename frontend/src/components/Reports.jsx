@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getIncidents, getStats, clearIncidents } from '../api';
 import StatsCharts from './StatsCharts';
+import RealLogImporter from './RealLogImporter';
 
 const SEVERITY_ORDER = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
@@ -311,6 +312,9 @@ export default function Reports() {
           color: 'var(--color-low)', fontSize: '0.875rem', fontWeight: 600,
         }}>{successMsg}</div>
       )}
+
+      {/* Real log importer */}
+      <RealLogImporter />
 
       {loading ? (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>

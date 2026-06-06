@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { getAuthToken } from '../api';
 
 const SOCKET_SERVER_URL = 'http://localhost:5000';
 
@@ -26,24 +27,36 @@ function getStatusClass(code) {
 }
 
 export default function LiveMonitor() {
-  const [logs, setLogs] = useState([]);
-  const [incidents, setIncidents] = useState([]);
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [logs, setLogs]               = useState([]);
+  const [incidents, setIncidents]     = useState([]);
+  const [isStreaming, setIsStreaming]  = useState(false);
   const [attackRatio, setAttackRatio] = useState(0.3);
-  const [connected, setConnected] = useState(false);
-  const [logCount, setLogCount] = useState(0);
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [connected, setConnected]     = useState(false);
+  const [logCount, setLogCount]       = useState(0);
+  const [autoScroll, setAutoScroll]   = useState(true);
   const [minuteBuckets, setMinuteBuckets] = useState(Array(10).fill(0));
-  const socketRef = useRef(null);
+  // Source mode: 'simulation' | 'real_windows' | 'mixed'
+  const [sourceMode, setSourceMode]   = useState('simulation');
+  const [winAvailable, setWinAvailable] = useState(false);
+  const socketRef      = useRef(null);
   const logContainerRef = useRef(null);
-  const minuteRef = useRef(null);
+  const minuteRef      = useRef(null);
+  const sourceModeRef  = useRef('simulation'); // keeps streamer in sync
 
   useEffect(() => {
-    const socket = io(SOCKET_SERVER_URL);
+    const token = getAuthToken();
+    const socket = io(SOCKET_SERVER_URL, token ? { query: { token } } : {});
     socketRef.current = socket;
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => { setConnected(false); setIsStreaming(false); });
+
+    // Backend tells us the current source mode and whether pywin32 is available
+    socket.on('source_mode_update', (data) => {
+      setSourceMode(data.mode);
+      sourceModeRef.current = data.mode;
+      setWinAvailable(data.win_available);
+    });
 
     socket.on('new_logs', (data) => {
       if (!data.logs) return;
@@ -88,7 +101,6 @@ export default function LiveMonitor() {
     const next = !isStreaming;
     socketRef.current.emit('toggle_stream', { active: next, attack_ratio: attackRatio });
     setIsStreaming(next);
-    if (!next) setLogCount(c => c); // keep count, don't reset
   };
 
   const handleRatioChange = (e) => {
@@ -97,6 +109,13 @@ export default function LiveMonitor() {
     if (socketRef.current && isStreaming) {
       socketRef.current.emit('toggle_stream', { active: true, attack_ratio: r });
     }
+  };
+
+  const switchMode = (mode) => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('set_source_mode', { mode });
+    setSourceMode(mode);
+    sourceModeRef.current = mode;
   };
 
   const maxBucket = Math.max(...minuteBuckets, 1);
@@ -120,25 +139,70 @@ export default function LiveMonitor() {
               {connected ? 'Connected' : 'Disconnected'}
             </span>
             {isStreaming && (
-              <span className="live-indicator"><span className="pulse-dot" /> LIVE</span>
+              sourceMode === 'real_windows'
+                ? <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px',
+                    borderRadius: 20, fontSize: '0.72rem', fontWeight: 700,
+                    background: 'rgba(255,45,85,0.15)', color: 'var(--color-critical)',
+                    border: '1px solid rgba(255,45,85,0.3)', animation: 'pulse-dot 1.5s infinite',
+                  }}>
+                    🔴 LIVE — Windows Events
+                  </span>
+                : <span className="live-indicator"><span className="pulse-dot" /> LIVE</span>
             )}
           </div>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
-            Real-time threat detection &amp; log stream
+            {sourceMode === 'real_windows'
+              ? '🪟 Reading live Windows Security Event Log'
+              : sourceMode === 'mixed'
+              ? '🔀 Mixed: Windows events + simulation'
+              : 'Simulation mode — real-time threat detection & log stream'}
           </p>
         </div>
         <div className="header-actions">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attack%:</label>
-            <select className="filter-select" value={attackRatio} onChange={handleRatioChange}>
-              <option value={0.1}>10%</option>
-              <option value={0.2}>20%</option>
-              <option value={0.3}>30%</option>
-              <option value={0.5}>50%</option>
-              <option value={0.7}>70%</option>
-              <option value={0.9}>90%</option>
-            </select>
+          {/* Source mode toggle */}
+          <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--bg-glass-border)' }}>
+            {[
+              { key: 'simulation',   label: '🧪 Sim' },
+              { key: 'mixed',        label: '🔀 Mixed',  disabled: !winAvailable },
+              { key: 'real_windows', label: '🪟 Windows', disabled: !winAvailable },
+            ].map(({ key, label, disabled }) => (
+              <button
+                key={key}
+                onClick={() => switchMode(key)}
+                disabled={disabled || !connected}
+                title={disabled ? 'pywin32 not installed or backend not running as Admin' : ''}
+                style={{
+                  padding: '6px 14px', border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+                  fontSize: '0.78rem', fontWeight: sourceMode === key ? 700 : 400,
+                  background: sourceMode === key
+                    ? (key === 'real_windows' ? 'rgba(255,45,85,0.2)' : 'rgba(0,240,255,0.12)')
+                    : 'rgba(255,255,255,0.04)',
+                  color: sourceMode === key
+                    ? (key === 'real_windows' ? 'var(--color-critical)' : 'var(--accent-cyan)')
+                    : disabled ? 'var(--text-muted)' : 'var(--text-secondary)',
+                  borderRight: '1px solid var(--bg-glass-border)',
+                  transition: 'all 0.2s',
+                }}
+              >{label}</button>
+            ))}
           </div>
+
+          {/* Attack ratio — only show in simulation modes */}
+          {sourceMode !== 'real_windows' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attack%:</label>
+              <select className="filter-select" value={attackRatio} onChange={handleRatioChange}>
+                <option value={0.1}>10%</option>
+                <option value={0.2}>20%</option>
+                <option value={0.3}>30%</option>
+                <option value={0.5}>50%</option>
+                <option value={0.7}>70%</option>
+                <option value={0.9}>90%</option>
+              </select>
+            </div>
+          )}
+
           <button
             className={`btn ${isStreaming ? 'btn-danger' : 'btn-primary'}`}
             onClick={toggleStream}

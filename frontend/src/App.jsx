@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { SignedIn, SignedOut, SignIn, UserButton, useAuth } from '@clerk/clerk-react';
 import Dashboard from './components/Dashboard';
 import LiveMonitor from './components/LiveMonitor';
 import Reports from './components/Reports';
 import Settings from './components/Settings';
 import FloatingAgent from './components/FloatingAgent';
+import { setAuthToken } from './api';
 import './index.css';
 
 const NAV_ITEMS = [
@@ -13,8 +15,20 @@ const NAV_ITEMS = [
   { id: 'settings', icon: '⚙️', label: 'Settings' },
 ];
 
-export default function App() {
+function AuthenticatedApp() {
   const [activePage, setActivePage] = useState('dashboard');
+  const { getToken } = useAuth();
+
+  // Keep the auth token fresh — Clerk tokens expire after 60s by default
+  useEffect(() => {
+    const refresh = async () => {
+      const token = await getToken();
+      setAuthToken(token);
+    };
+    refresh();
+    const interval = setInterval(refresh, 55_000);
+    return () => clearInterval(interval);
+  }, [getToken]);
 
   return (
     <div className="app-layout">
@@ -69,6 +83,17 @@ export default function App() {
             <span style={{ color: 'var(--text-muted)' }}>Developed by</span> <span style={{ color: 'var(--accent-cyan)' }}>Dolev Atik</span>
           </div>
         </div>
+
+        {/* User profile button */}
+        <div style={{ padding: '12px 14px' }}>
+          <UserButton
+            appearance={{
+              elements: {
+                userButtonAvatarBox: { width: 32, height: 32 },
+              },
+            }}
+          />
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -82,5 +107,36 @@ export default function App() {
       {/* Floating AI Agent */}
       <FloatingAgent />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <>
+      <SignedOut>
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg-primary)',
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-cyan)', letterSpacing: '-1px' }}>
+                AI SOC Analyst
+              </div>
+              <div style={{ color: 'var(--text-muted)', marginTop: '6px', fontSize: '0.9rem' }}>
+                Sign in to access the threat detection dashboard
+              </div>
+            </div>
+            <SignIn routing="hash" />
+          </div>
+        </div>
+      </SignedOut>
+      <SignedIn>
+        <AuthenticatedApp />
+      </SignedIn>
+    </>
   );
 }

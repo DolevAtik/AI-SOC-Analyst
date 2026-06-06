@@ -5,45 +5,71 @@ Analyzes batches of server log entries and identifies security incidents.
 import re
 import os
 import json
-import requests
+import time
+import hashlib
+import anthropic
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
-def call_gemini(prompt: str) -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
+# Import shared severity rank and blocklist helpers from db layer
+from db import SEVERITY_RANK, get_blocklist
+
+# ── AI insight cache — keyed by batch hash, expires after CACHE_TTL seconds ──
+_ai_cache: dict = {}   # {hash: (result_str, expiry_epoch)}
+CACHE_TTL = 60         # seconds
+
+def call_claude(prompt: str, retries: int = 3) -> str:
+    """Call Claude API with exponential backoff on transient errors."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise Exception("API key not configured.")
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    
+
+    client = anthropic.Anthropic(api_key=api_key)
+    last_exc = None
+
+    for attempt in range(retries):
+        try:
+            message = client.messages.create(
+                model="claude-opus-4-8",
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return message.content[0].text
+
+        except anthropic.RateLimitError:
+            wait = 2 ** attempt
+            print(f"Claude rate-limited — retrying in {wait}s (attempt {attempt+1}/{retries})")
+            time.sleep(wait)
+            last_exc = Exception(
+                "API rate limit exceeded. Please wait a moment or check your Anthropic plan."
+            )
+
+        except anthropic.APIStatusError as e:
+            if e.status_code >= 500:
+                wait = 2 ** attempt
+                print(f"Claude server error {e.status_code} — retrying in {wait}s")
+                time.sleep(wait)
+                last_exc = Exception(f"AI Provider Error ({e.status_code})")
+            else:
+                raise Exception(f"AI Provider Error ({e.status_code}): {e.message}")
+
+        except anthropic.APIConnectionError as e:
+            print(f"Connection error to Claude: {str(e)}")
+            last_exc = Exception(f"Connection Error to AI Provider: {str(e)}")
+            time.sleep(2 ** attempt)
+
+    raise last_exc or Exception("Claude API failed after all retries.")
+
+
+def _load_blocklist() -> set:
+    """Load the current IP blocklist from the database (live, not cached)."""
     try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 429:
-            raise Exception("API rate limit exceeded (Quota Exhausted). Please wait a moment before asking again or check your Gemini plan.")
-        elif response.status_code != 200:
-            error_data = response.json() if response.content else "No content"
-            print(f"Gemini API Error: {response.status_code} - {error_data}")
-            raise Exception(f"AI Provider Error ({response.status_code})")
-            
-        result = response.json()
-        return result['candidates'][0]['content']['parts'][0]['text']
-    except requests.exceptions.RequestException as e:
-        print(f"Request Error calling Gemini: {str(e)}")
-        raise Exception(f"Connection Error to AI Provider: {str(e)}")
-    except (KeyError, IndexError, json.JSONDecodeError) as e:
-        print(f"Parsing Error from Gemini: {str(e)}")
-        raise Exception("Unexpected response format from Gemini API.")
-
-
-# --- Known-malicious IP blocklist ---
-BLOCKLISTED_IPS = {
-    "185.220.101.34", "185.220.101.45",
-    "45.155.205.233", "45.155.205.100",
-    "193.142.146.22", "89.248.167.131",
-    "103.43.75.118", "23.129.64.130",
-}
+        return set(get_blocklist())
+    except Exception:
+        # Fallback in case DB isn't ready yet
+        return {"185.220.101.34", "185.220.101.45", "45.155.205.233",
+                "45.155.205.100", "193.142.146.22", "89.248.167.131",
+                "103.43.75.118",  "23.129.64.130"}
 
 # --- SQL injection detection patterns ---
 SQL_PATTERNS = [
@@ -65,6 +91,33 @@ SENSITIVE_PATHS = {
 
 # --- Malicious user agents ---
 MALICIOUS_AGENTS = {"sqlmap", "nikto", "nmap", "masscan", "dirbuster", "gobuster"}
+
+# --- XSS detection patterns ---
+XSS_PATTERNS = [
+    re.compile(r"<script", re.IGNORECASE),
+    re.compile(r"javascript:", re.IGNORECASE),
+    re.compile(r"on(error|load|click|mouseover)\s*=", re.IGNORECASE),
+    re.compile(r"alert\s*\(", re.IGNORECASE),
+    re.compile(r"document\.(cookie|write|location)", re.IGNORECASE),
+    re.compile(r"eval\s*\(", re.IGNORECASE),
+    re.compile(r"(%3C)script", re.IGNORECASE),   # URL-encoded <script
+    re.compile(r"<svg[^>]*onload", re.IGNORECASE),
+    re.compile(r"<iframe", re.IGNORECASE),
+    re.compile(r"base64.*<", re.IGNORECASE),
+]
+
+# --- Path traversal detection patterns ---
+PATH_TRAVERSAL_PATTERNS = [
+    re.compile(r"\.\./", re.IGNORECASE),
+    re.compile(r"\.\.\\", re.IGNORECASE),
+    re.compile(r"%2e%2e[%/\\]", re.IGNORECASE),   # URL-encoded ../
+    re.compile(r"%252e%252e", re.IGNORECASE),       # Double-encoded
+    re.compile(r"etc/(passwd|shadow|hosts)", re.IGNORECASE),
+    re.compile(r"proc/self/(environ|cmdline|exe)", re.IGNORECASE),
+    re.compile(r"windows[/\\]system32", re.IGNORECASE),
+    re.compile(r"boot\.ini", re.IGNORECASE),
+    re.compile(r"win\.ini", re.IGNORECASE),
+]
 
 
 def _parse_timestamp(ts: str) -> datetime:
@@ -256,12 +309,13 @@ def detect_unauthorized_access(logs: list) -> list:
 
 
 def detect_suspicious_ips(logs: list) -> list:
-    """Flag any activity from known-malicious IP addresses."""
+    """Flag any activity from known-malicious IP addresses (loaded live from DB)."""
+    blocklist = _load_blocklist()
     incidents = []
     activity_by_ip = defaultdict(list)
 
     for log in logs:
-        if log.get("ip") in BLOCKLISTED_IPS:
+        if log.get("ip") in blocklist:
             activity_by_ip[log["ip"]].append(log)
 
     for ip, ip_logs in activity_by_ip.items():
@@ -288,45 +342,242 @@ def detect_suspicious_ips(logs: list) -> list:
     return incidents
 
 
-def analyze_with_gemini(logs: list) -> str:
-    """Use Gemini AI to provide a heuristic analysis of the log batch."""
-    api_key = os.getenv("GEMINI_API_KEY")
+def detect_xss(logs: list) -> list:
+    """Detect Cross-Site Scripting (XSS) injection attempts in request paths."""
+    incidents = []
+    xss_by_ip = defaultdict(list)
+
+    for log in logs:
+        path = log.get("path", "")
+        for pattern in XSS_PATTERNS:
+            if pattern.search(path):
+                xss_by_ip[log["ip"]].append(log)
+                break
+
+    for ip, xss_logs in xss_by_ip.items():
+        count = len(xss_logs)
+        server_errors = sum(1 for l in xss_logs if l.get("status_code", 0) >= 500)
+
+        if server_errors > 0 or count >= 5:
+            severity = "Critical"
+            summary = (
+                f"XSS attack from {ip}: {count} malicious requests detected. "
+                f"{server_errors} server errors — possible successful injection."
+            )
+            action = f"Block IP {ip}, sanitize all user-controlled output, implement Content-Security-Policy headers."
+        elif count >= 3:
+            severity = "High"
+            summary = f"Multiple XSS injection attempts from {ip}: {count} requests with script payloads."
+            action = f"Block IP {ip}, audit templates for unescaped output, add CSP headers."
+        else:
+            severity = "Medium"
+            summary = f"XSS injection attempt detected from {ip}."
+            action = f"Monitor IP {ip}, review output encoding on affected endpoints."
+
+        agents = {l.get("user_agent", "").lower() for l in xss_logs}
+        for kw in MALICIOUS_AGENTS:
+            if any(kw in a for a in agents):
+                severity = "Critical"
+                summary += " Automated attack tool detected."
+                break
+
+        incidents.append({
+            "incident_detected": True,
+            "severity": severity,
+            "threat_type": "XSS Injection",
+            "source_ip": ip,
+            "summary": summary,
+            "recommended_action": action,
+            "timestamp": xss_logs[0]["timestamp"],
+        })
+
+    return incidents
+
+
+def detect_path_traversal(logs: list) -> list:
+    """Detect path traversal / directory traversal attacks."""
+    incidents = []
+    pt_by_ip = defaultdict(list)
+
+    for log in logs:
+        path = log.get("path", "")
+        for pattern in PATH_TRAVERSAL_PATTERNS:
+            if pattern.search(path):
+                pt_by_ip[log["ip"]].append(log)
+                break
+
+    for ip, pt_logs in pt_by_ip.items():
+        count = len(pt_logs)
+        success = sum(1 for l in pt_logs if l.get("status_code", 0) == 200)
+
+        if success > 0:
+            severity = "Critical"
+            summary = (
+                f"Path traversal attack from {ip}: {count} attempts, {success} returned HTTP 200 "
+                f"— possible file disclosure."
+            )
+            action = f"Block IP {ip} immediately, audit file access logs, restrict web root permissions."
+        elif count >= 3:
+            severity = "High"
+            summary = f"Path traversal attack from {ip}: {count} directory traversal attempts detected."
+            action = f"Block IP {ip}, validate and sanitize all file path inputs, chroot web process."
+        else:
+            severity = "Medium"
+            summary = f"Path traversal attempt from {ip}."
+            action = f"Monitor IP {ip}, ensure file path inputs are validated against a whitelist."
+
+        incidents.append({
+            "incident_detected": True,
+            "severity": severity,
+            "threat_type": "Path Traversal",
+            "source_ip": ip,
+            "summary": summary,
+            "recommended_action": action,
+            "timestamp": pt_logs[0]["timestamp"],
+        })
+
+    return incidents
+
+
+def detect_rate_flood(logs: list) -> list:
+    """Detect request-rate flooding — one IP sending an unusually high volume of requests."""
+    incidents = []
+    requests_by_ip = defaultdict(list)
+
+    for log in logs:
+        requests_by_ip[log["ip"]].append(log)
+
+    for ip, ip_logs in requests_by_ip.items():
+        count = len(ip_logs)
+        if count < 20:
+            continue
+
+        timestamps = sorted([_parse_timestamp(l["timestamp"]) for l in ip_logs])
+        if len(timestamps) >= 2:
+            window = (timestamps[-1] - timestamps[0]).total_seconds() or 1
+            rate = count / window  # requests per second
+        else:
+            rate = count
+
+        severity = "Critical" if count >= 50 or rate >= 5 else "High"
+        summary = (
+            f"Request flood from {ip}: {count} requests"
+            + (f" at {rate:.1f} req/s" if rate < 9999 else "")
+            + ". Possible DoS or automated scanning."
+        )
+
+        incidents.append({
+            "incident_detected": True,
+            "severity": severity,
+            "threat_type": "Request Flood / DoS",
+            "source_ip": ip,
+            "summary": summary,
+            "recommended_action": f"Rate-limit and block IP {ip} at the WAF/firewall level. Enable CAPTCHA on public endpoints.",
+            "timestamp": ip_logs[0]["timestamp"],
+        })
+
+    return incidents
+
+
+def detect_credential_stuffing(logs: list) -> list:
+    """Detect credential stuffing — many different usernames tried from the same IP."""
+    incidents = []
+    login_paths = {"/login", "/api/v1/auth/login", "/auth/signin", "/api/v1/auth"}
+    attempts_by_ip = defaultdict(list)
+
+    for log in logs:
+        if log.get("method") == "POST" and log.get("path", "").lower() in login_paths:
+            attempts_by_ip[log["ip"]].append(log)
+
+    for ip, login_logs in attempts_by_ip.items():
+        unique_users = {l.get("user") for l in login_logs if l.get("user")}
+        if len(unique_users) < 3:
+            continue
+
+        count = len(login_logs)
+        failures = sum(1 for l in login_logs if l.get("status_code") in (401, 403))
+        successes = count - failures
+
+        severity = "Critical" if successes > 0 else "High"
+        summary = (
+            f"Credential stuffing from {ip}: {count} login attempts using {len(unique_users)} "
+            f"different accounts ({failures} failures"
+            + (f", {successes} SUCCESSFUL — accounts may be compromised" if successes > 0 else "")
+            + ")."
+        )
+
+        incidents.append({
+            "incident_detected": True,
+            "severity": severity,
+            "threat_type": "Credential Stuffing",
+            "source_ip": ip,
+            "summary": summary,
+            "recommended_action": f"Block IP {ip}, force password reset on targeted accounts ({', '.join(list(unique_users)[:5])}), enable MFA.",
+            "timestamp": login_logs[0]["timestamp"],
+        })
+
+    return incidents
+
+
+def analyze_with_claude(logs: list) -> str:
+    """Use Claude AI to provide a heuristic analysis of the log batch.
+
+    Results are cached for CACHE_TTL seconds based on the batch content
+    to avoid burning API quota on identical live-stream iterations.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        return "Gemini AI analysis is unavailable (API key not configured)."
+        return "Claude AI analysis is unavailable (API key not configured)."
+
+    # Build a stable cache key from the first 15 log IPs + paths
+    key_data = json.dumps(
+        [{"ip": l.get("ip"), "path": l.get("path")} for l in logs[:15]],
+        sort_keys=True,
+    )
+    cache_key = hashlib.md5(key_data.encode()).hexdigest()
+    now = time.time()
+
+    if cache_key in _ai_cache:
+        cached_result, expiry = _ai_cache[cache_key]
+        if now < expiry:
+            return cached_result  # serve from cache
 
     # Prepare a condensed version of logs for analysis
-    log_samples = []
-    for l in logs[:15]:  # Send up to 15 logs for context
-        log_samples.append({
+    log_samples = [
+        {
             "ip": l.get("ip"),
             "path": l.get("path"),
             "status": l.get("status_code"),
             "method": l.get("method"),
-            "ua": l.get("user_agent")
-        })
+            "ua": l.get("user_agent"),
+        }
+        for l in logs[:15]
+    ]
 
     prompt = f"""
     You are a Senior SOC Analyst. Analyze these server logs for security threats.
     Logs: {json.dumps(log_samples)}
 
-    Provide a concise (2-3 sentences) high-level security summary. 
+    Provide a concise (2-3 sentences) high-level security summary.
     If you see suspicious patterns (brute force, SQLi, scanning), mention them.
     If everything looks normal, say so.
     """
 
     try:
-        response_text = call_gemini(prompt)
-        return response_text.strip()
+        response_text = call_claude(prompt)
+        result = response_text.strip()
+        _ai_cache[cache_key] = (result, now + CACHE_TTL)
+        return result
     except Exception as e:
         return f"Error during AI analysis: {str(e)}"
 
 
 def analyze_manual_log(log_text: str) -> dict:
     """Specialized AI analysis for a manually entered log string."""
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return {
-            "error": "Gemini AI analysis is unavailable (API key not configured).",
+            "error": "Claude AI analysis is unavailable (API key not configured).",
             "fix_tip": None
         }
 
@@ -346,7 +597,7 @@ def analyze_manual_log(log_text: str) -> dict:
     """
 
     try:
-        content = call_gemini(prompt).strip()
+        content = call_claude(prompt).strip()
         # Attempt to parse JSON from response
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
@@ -367,10 +618,10 @@ def analyze_manual_log(log_text: str) -> dict:
         }
 
 def chat_with_ai(message: str, context: list) -> str:
-    """Send a user message and current SOC context to Gemini for an interactive chat response."""
-    api_key = os.getenv("GEMINI_API_KEY")
+    """Send a user message and current SOC context to Claude for an interactive chat response."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        return "Gemini AI is unavailable (API key not configured)."
+        return "Claude AI is unavailable (API key not configured)."
 
     # Format the context (e.g., recent incidents) into a string
     context_str = json.dumps(context, indent=2) if context else "No critical incidents or logs provided."
@@ -390,7 +641,7 @@ def chat_with_ai(message: str, context: list) -> str:
     """
 
     try:
-        response_text = call_gemini(prompt)
+        response_text = call_claude(prompt)
         return response_text.strip()
     except Exception as e:
         return f"Error communicating with AI: {str(e)}"
@@ -406,19 +657,22 @@ def analyze_logs(logs: list) -> list:
     all_incidents.extend(detect_sql_injection(logs))
     all_incidents.extend(detect_unauthorized_access(logs))
     all_incidents.extend(detect_suspicious_ips(logs))
+    all_incidents.extend(detect_xss(logs))
+    all_incidents.extend(detect_path_traversal(logs))
+    all_incidents.extend(detect_rate_flood(logs))
+    all_incidents.extend(detect_credential_stuffing(logs))
 
     # Deduplicate by (ip, threat_type) — keep highest severity
-    severity_rank = {"Low": 0, "Medium": 1, "High": 2, "Critical": 3}
     seen = {}
     for inc in all_incidents:
         key = (inc["source_ip"], inc["threat_type"])
-        if key not in seen or severity_rank.get(inc["severity"], 0) > severity_rank.get(seen[key]["severity"], 0):
+        if key not in seen or SEVERITY_RANK.get(inc["severity"], 0) > SEVERITY_RANK.get(seen[key]["severity"], 0):
             seen[key] = inc
 
     deduplicated = list(seen.values())
     
     # Get AI Insights
-    ai_insight = analyze_with_gemini(logs)
+    ai_insight = analyze_with_claude(logs)
 
     if not deduplicated:
         return [{
@@ -437,5 +691,5 @@ def analyze_logs(logs: list) -> list:
         deduplicated[0]["ai_insight"] = ai_insight
 
     # Sort by severity (highest first)
-    deduplicated.sort(key=lambda x: severity_rank.get(x.get("severity", ""), 0), reverse=True)
+    deduplicated.sort(key=lambda x: SEVERITY_RANK.get(x.get("severity", ""), 0), reverse=True)
     return deduplicated
