@@ -17,6 +17,7 @@ const NAV_ITEMS = [
 
 function AuthenticatedApp() {
   const [activePage, setActivePage] = useState('dashboard');
+  const [tokenReady, setTokenReady] = useState(false);
   const { getToken } = useAuth();
 
   // Keep the auth token fresh — Clerk tokens expire after 60s by default
@@ -24,6 +25,7 @@ function AuthenticatedApp() {
     const refresh = async () => {
       const token = await getToken();
       setAuthToken(token);
+      setTokenReady(true);
     };
     refresh();
     const interval = setInterval(refresh, 55_000);
@@ -98,10 +100,10 @@ function AuthenticatedApp() {
 
       {/* Main Content */}
       <main className="main-content">
-        {activePage === 'dashboard' && <Dashboard />}
-        {activePage === 'monitor' && <LiveMonitor />}
-        {activePage === 'reports' && <Reports />}
-        {activePage === 'settings' && <Settings />}
+        {tokenReady && activePage === 'dashboard' && <Dashboard />}
+        {tokenReady && activePage === 'monitor' && <LiveMonitor />}
+        {tokenReady && activePage === 'reports' && <Reports />}
+        {tokenReady && activePage === 'settings' && <Settings />}
       </main>
 
       {/* Floating AI Agent */}
