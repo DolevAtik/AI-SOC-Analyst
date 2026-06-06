@@ -198,16 +198,58 @@ MIT
 
 ---
 
-## הרצה דרך Docker
+## Docker
 
-התמונות של הפרויקט פורסמו ל-Docker Hub וניתן למשוך ולהריץ אותן בקלות:
+Docker images are published to Docker Hub — no local build required.
+
+### Prerequisites
+
+Create `backend/.env` with your secrets (see `backend/.env.example`):
+```
+ANTHROPIC_API_KEY=sk-ant-api03-...
+FLASK_SECRET_KEY=any-random-string
+CLERK_JWKS_URL=https://your-instance.clerk.accounts.dev/.well-known/jwks.json
+```
+
+Create `frontend/.env` (see `frontend/.env.example`):
+```
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+```
+
+### Production (nginx + pre-built images)
+
+```bash
+docker compose up
+```
+
+| Service | URL |
+|---|---|
+| Frontend (nginx) | http://localhost |
+| Backend API | http://localhost:5000 |
+
+The frontend nginx container proxies `/api` and `/socket.io` requests to the backend automatically — no manual port configuration needed.
+
+### Development (hot-reload)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend (Vite dev server) | http://localhost:5173 |
+| Backend API | http://localhost:5000 |
+
+Source files are mounted as volumes — changes to `backend/` and `frontend/src/` reload instantly without rebuilding.
+
+### Pull images manually
 
 ```bash
 docker pull dolevatik/soc-analyst-backend:latest
 docker pull dolevatik/soc-analyst-frontend:latest
-docker compose up
 ```
 
-לאחר הרצת `docker compose up` השירותים יהיו זמינים מקומית (הגדרות ברירת מחדל):
-- Backend: http://localhost:5000
-- Frontend: http://localhost:5173
+### Data persistence
+
+SQLite database is stored in a named Docker volume (`soc-db`) — incidents survive container restarts.
+To reset: `docker volume rm ai_soc_analyst_soc-db`

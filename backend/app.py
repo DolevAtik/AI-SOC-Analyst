@@ -107,7 +107,7 @@ socketio.start_background_task(background_streamer)
 
 @socketio.on('connect')
 def handle_connect(auth=None):
-    if os.getenv("CLERK_JWKS_URL"):
+    if os.getenv("SUPABASE_URL"):
         token = request.args.get('token', '')
         if not token or not verify_token(token):
             return False  # Reject connection

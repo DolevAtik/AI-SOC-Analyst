@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { SignedIn, SignedOut, SignIn, UserButton, useAuth } from '@clerk/clerk-react';
+import { supabase } from './supabase';
 import Dashboard from './components/Dashboard';
 import LiveMonitor from './components/LiveMonitor';
 import Reports from './components/Reports';
@@ -16,26 +16,182 @@ const NAV_ITEMS = [
   { id: 'settings', icon: '⚙️', label: 'Settings' },
 ];
 
-function AuthenticatedApp() {
-  const [activePage, setActivePage] = useState('dashboard');
-  const [tokenReady, setTokenReady] = useState(false);
-  const { getToken } = useAuth();
+function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
-  // Keep the auth token fresh — Clerk tokens expire after 60s by default
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    if (isSignUp) {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setError(error.message);
+      else setMessage('Check your email for a confirmation link.');
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setError(error.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--bg-primary)',
+    }}>
+      <div style={{ width: '100%', maxWidth: '380px', padding: '0 16px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-cyan)', letterSpacing: '-1px' }}>
+            AI SOC Analyst
+          </div>
+          <div style={{ color: 'var(--text-muted)', marginTop: '6px', fontSize: '0.9rem' }}>
+            {isSignUp ? 'Create an account' : 'Sign in to access the threat detection dashboard'}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '28px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              placeholder="you@example.com"
+              style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.9rem',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500 }}>Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              placeholder="••••••••"
+              style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-md)',
+                padding: '10px 12px',
+                color: 'var(--text-primary)',
+                fontSize: '0.9rem',
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {error && (
+            <div style={{
+              color: 'var(--color-critical)',
+              fontSize: '0.82rem',
+              background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+            }}>
+              {error}
+            </div>
+          )}
+
+          {message && (
+            <div style={{
+              color: 'var(--color-low)',
+              fontSize: '0.82rem',
+              background: 'rgba(52,211,153,0.08)',
+              border: '1px solid rgba(52,211,153,0.2)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+            }}>
+              {message}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              background: 'var(--accent-cyan)',
+              color: '#000',
+              border: 'none',
+              borderRadius: 'var(--radius-md)',
+              padding: '11px',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              marginTop: '4px',
+            }}
+          >
+            {loading ? 'Please wait...' : isSignUp ? 'Create Account' : 'Sign In'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage(''); }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--accent-cyan)',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+              textAlign: 'center',
+            }}
+          >
+            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function AuthenticatedApp({ session }) {
+  const [activePage, setActivePage] = useState('dashboard');
+
   useEffect(() => {
-    const refresh = async () => {
-      const token = await getToken();
-      setAuthToken(token);
-      setTokenReady(true);
-    };
-    refresh();
-    const interval = setInterval(refresh, 55_000);
-    return () => clearInterval(interval);
-  }, [getToken]);
+    setAuthToken(session.access_token);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      if (s) setAuthToken(s.access_token);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [session]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+  };
 
   return (
     <div className="app-layout">
-      {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="logo-icon">AI</div>
@@ -62,7 +218,6 @@ function AuthenticatedApp() {
           </ul>
         </nav>
 
-        {/* Status indicator */}
         <div className="sidebar-status" style={{
           marginTop: 'auto',
           padding: '14px',
@@ -87,59 +242,60 @@ function AuthenticatedApp() {
           </div>
         </div>
 
-        {/* User profile button */}
         <div className="sidebar-user" style={{ padding: '12px 14px' }}>
-          <UserButton
-            appearance={{
-              elements: {
-                userButtonAvatarBox: { width: 32, height: 32 },
-              },
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>
+              {session.user.email}
+            </span>
+            <button
+              onClick={handleSignOut}
+              title="Sign out"
+              style={{
+                background: 'none',
+                border: '1px solid var(--border-primary)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                fontSize: '0.72rem',
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="main-content">
-        {tokenReady && activePage === 'dashboard' && <Dashboard />}
-        {tokenReady && activePage === 'monitor' && <LiveMonitor />}
-        {tokenReady && activePage === 'reports' && <Reports />}
-        {tokenReady && activePage === 'settings' && <Settings />}
+        {activePage === 'dashboard' && <Dashboard />}
+        {activePage === 'monitor' && <LiveMonitor />}
+        {activePage === 'reports' && <Reports />}
+        {activePage === 'settings' && <Settings />}
       </main>
 
-      {/* Floating AI Agent */}
       <FloatingAgent />
     </div>
   );
 }
 
 export default function App() {
+  const [session, setSession] = useState(undefined);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) return null;
+
   return (
     <ToastProvider>
-      <SignedOut>
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--bg-primary)',
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--accent-cyan)', letterSpacing: '-1px' }}>
-                AI SOC Analyst
-              </div>
-              <div style={{ color: 'var(--text-muted)', marginTop: '6px', fontSize: '0.9rem' }}>
-                Sign in to access the threat detection dashboard
-              </div>
-            </div>
-            <SignIn routing="hash" />
-          </div>
-        </div>
-      </SignedOut>
-      <SignedIn>
-        <AuthenticatedApp />
-      </SignedIn>
+      {session ? <AuthenticatedApp session={session} /> : <LoginPage />}
     </ToastProvider>
   );
 }
