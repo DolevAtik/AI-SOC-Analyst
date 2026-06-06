@@ -52,6 +52,8 @@ init_db()
 streaming_active      = False
 current_attack_ratio  = 0.3
 source_mode           = "simulation"   # 'simulation' | 'real_windows' | 'mixed'
+current_scenario      = "random"       # 'random' | scenario name
+_scenario_runner      = None           # ScenarioRunner instance when active
 
 def background_streamer():
     """Background thread that continuously generates and analyzes logs."""
@@ -75,6 +77,11 @@ def background_streamer():
                         needed    = max(5, 15 - len(real_logs))
                         sim_logs  = generate_log_batch(count=needed, attack_ratio=current_attack_ratio)
                         logs      = real_logs + sim_logs
+
+                    elif _scenario_runner:
+                        logs, phase_info = _scenario_runner.next_batch(count=15)
+                        if phase_info.get("phase_changed"):
+                            socketio.emit("scenario_phase_update", phase_info)
 
                     else:  # simulation (default)
                         logs = generate_log_batch(count=15, attack_ratio=current_attack_ratio)
@@ -139,6 +146,29 @@ def handle_set_source_mode(data):
         'mode':          source_mode,
         'win_available': win_reader_available(),
     })
+
+@socketio.on('set_scenario')
+def handle_set_scenario(data):
+    """Switch between random mode and a named scenario campaign."""
+    global current_scenario, _scenario_runner
+    from log_generator import ScenarioRunner, SCENARIO_CATALOG
+
+    name = data.get('name', 'random')
+    current_scenario = name
+
+    if name == 'random' or name not in SCENARIO_CATALOG:
+        _scenario_runner = None
+        logger.info("Scenario mode: random")
+    else:
+        _scenario_runner = ScenarioRunner(name)
+        logger.info("Scenario started: %s", name)
+
+    phase_info = _scenario_runner.get_phase_info() if _scenario_runner else None
+    emit('scenario_update', {
+        'scenario':   name,
+        'phase_info': phase_info,
+    })
+
 
 @socketio.on('chat_message')
 def handle_chat_message(data):
@@ -298,6 +328,22 @@ def report_incident():
     save_incident(incident)
     return jsonify({"status": "success", "message": "Incident reported successfully."})
 
+
+
+@app.route("/api/scenarios", methods=["GET"])
+def list_scenarios():
+    """Return available scenario catalog (no auth required — metadata only)."""
+    from log_generator import SCENARIO_CATALOG
+    catalog = {
+        name: {
+            "label":        s["label"],
+            "description":  s["description"],
+            "duration_min": s["duration_min"],
+            "phases":       [{"name": p["name"], "desc": p["desc"]} for p in s["phases"]],
+        }
+        for name, s in SCENARIO_CATALOG.items()
+    }
+    return jsonify({"scenarios": catalog})
 
 
 @app.route("/api/health", methods=["GET"])

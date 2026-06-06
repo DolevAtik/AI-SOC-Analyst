@@ -7,6 +7,7 @@ import AnalysisPanel from './AnalysisPanel';
 import ManualLogInput from './ManualLogInput';
 import { getStats, getIncidents, clearIncidents, getAuthToken } from '../api';
 import { useToast } from './Toast';
+import ScenarioPanel from './ScenarioPanel';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -21,6 +22,8 @@ export default function Dashboard() {
   const [socket, setSocket] = useState(null);
   const toast = useToast();
   const notifiedIPs = useRef(new Set());
+  const [currentScenario, setCurrentScenario] = useState('random');
+  const [phaseInfo, setPhaseInfo] = useState(null);
 
   useEffect(() => {
     loadStats();
@@ -69,8 +72,18 @@ export default function Dashboard() {
     });
 
     newSocket.on('stats_update', (data) => {
-      if (data.stats) {
-        setStats(data.stats);
+      if (data.stats) setStats(data.stats);
+    });
+
+    newSocket.on('scenario_update', (data) => {
+      setCurrentScenario(data.scenario || 'random');
+      if (data.phase_info) setPhaseInfo(data.phase_info);
+    });
+
+    newSocket.on('scenario_phase_update', (data) => {
+      setPhaseInfo(data);
+      if (data.next_phase_name) {
+        toast?.(`Phase: ${data.next_phase_name}`, 'info', 5000);
       }
     });
 
@@ -146,20 +159,22 @@ export default function Dashboard() {
           </p>
         </div>
         <div className="header-actions">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attack%:</label>
-            <select
-              className="filter-select"
-              value={attackRatio}
-              onChange={handleAttackRatioChange}
-            >
-              <option value={0.1}>10%</option>
-              <option value={0.2}>20%</option>
-              <option value={0.3}>30%</option>
-              <option value={0.5}>50%</option>
-              <option value={0.7}>70%</option>
-            </select>
-          </div>
+          {currentScenario === 'random' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Attack%:</label>
+              <select
+                className="filter-select"
+                value={attackRatio}
+                onChange={handleAttackRatioChange}
+              >
+                <option value={0.1}>10%</option>
+                <option value={0.2}>20%</option>
+                <option value={0.3}>30%</option>
+                <option value={0.5}>50%</option>
+                <option value={0.7}>70%</option>
+              </select>
+            </div>
+          )}
           <button 
             className={`btn ${isStreaming ? 'btn-danger' : 'btn-primary'}`} 
             onClick={toggleStream} 
@@ -172,6 +187,15 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Scenario Panel */}
+      <ScenarioPanel
+        socket={socket}
+        isStreaming={isStreaming}
+        currentScenario={currentScenario}
+        phaseInfo={phaseInfo}
+        onScenarioChange={setCurrentScenario}
+      />
 
       {/* Error Banner */}
       {error && (
