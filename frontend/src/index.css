@@ -1172,3 +1172,15 @@ option {
   50% { transform: translateY(-5px); }
   100% { transform: translateY(0); }
 }
+
+/* ── Toast notifications ──────────────────────────────────── */
+@keyframes toast-slide-in {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── Attack Chain timeline ────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

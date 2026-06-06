@@ -18,6 +18,50 @@ from db import SEVERITY_RANK, get_blocklist
 _ai_cache: dict = {}   # {hash: (result_str, expiry_epoch)}
 CACHE_TTL = 60         # seconds
 
+# ── MITRE ATT&CK Framework mapping ────────────────────────────────────────────
+MITRE_MAPPING = {
+    "Brute Force Attack": {
+        "tactic": "Credential Access",
+        "technique_id": "T1110.001",
+        "technique_name": "Password Guessing",
+    },
+    "Credential Stuffing": {
+        "tactic": "Credential Access",
+        "technique_id": "T1110.004",
+        "technique_name": "Credential Stuffing",
+    },
+    "SQL Injection": {
+        "tactic": "Initial Access",
+        "technique_id": "T1190",
+        "technique_name": "Exploit Public-Facing Application",
+    },
+    "XSS Injection": {
+        "tactic": "Initial Access",
+        "technique_id": "T1190",
+        "technique_name": "Exploit Public-Facing Application",
+    },
+    "Path Traversal": {
+        "tactic": "Collection",
+        "technique_id": "T1005",
+        "technique_name": "Data from Local System",
+    },
+    "Unauthorized Access Attempt": {
+        "tactic": "Discovery",
+        "technique_id": "T1083",
+        "technique_name": "File and Directory Discovery",
+    },
+    "Suspicious IP Activity": {
+        "tactic": "Command and Control",
+        "technique_id": "T1071",
+        "technique_name": "Application Layer Protocol",
+    },
+    "Request Flood / DoS": {
+        "tactic": "Impact",
+        "technique_id": "T1499",
+        "technique_name": "Endpoint Denial of Service",
+    },
+}
+
 def call_claude(prompt: str, retries: int = 3) -> str:
     """Call Claude API with exponential backoff on transient errors."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -519,7 +563,7 @@ def detect_credential_stuffing(logs: list) -> list:
     return incidents
 
 
-def analyze_with_claude(logs: list) -> str:
+def analyze_with_claude(logs: list, rule_detections: list = None) -> str:
     """Use Claude AI to provide a heuristic analysis of the log batch.
 
     Results are cached for CACHE_TTL seconds based on the batch content
@@ -542,7 +586,6 @@ def analyze_with_claude(logs: list) -> str:
         if now < expiry:
             return cached_result  # serve from cache
 
-    # Prepare a condensed version of logs for analysis
     log_samples = [
         {
             "ip": l.get("ip"),
@@ -554,14 +597,29 @@ def analyze_with_claude(logs: list) -> str:
         for l in logs[:15]
     ]
 
-    prompt = f"""
-    You are a Senior SOC Analyst. Analyze these server logs for security threats.
-    Logs: {json.dumps(log_samples)}
+    # Summarize what rule-based detectors already found
+    detections_summary = ""
+    if rule_detections:
+        real = [d for d in rule_detections if d.get("incident_detected")]
+        if real:
+            lines = [f"- {d['severity']} | {d['threat_type']} from {d['source_ip']}" for d in real[:5]]
+            detections_summary = "\n\nRule-based detectors already flagged:\n" + "\n".join(lines)
 
-    Provide a concise (2-3 sentences) high-level security summary.
-    If you see suspicious patterns (brute force, SQLi, scanning), mention them.
-    If everything looks normal, say so.
-    """
+    prompt = f"""You are a Senior Threat Intelligence Analyst at a SOC.
+
+Analyze the following server log batch for security threats and attack patterns.
+{detections_summary}
+
+Log sample ({len(logs)} total entries):
+{json.dumps(log_samples, indent=2)}
+
+Provide a concise 2-3 sentence threat intelligence summary:
+- Confirm or challenge the rule-based detections if present
+- Identify any additional attack patterns, TTPs, or anomalies
+- Assess the overall threat level (Low / Medium / High / Critical)
+- If you recognize MITRE ATT&CK techniques, mention the tactic
+
+Be direct and professional. No disclaimers."""
 
     try:
         response_text = call_claude(prompt)
@@ -617,28 +675,56 @@ def analyze_manual_log(log_text: str) -> dict:
             "fix_tip": "Review the log manually for suspicious patterns."
         }
 
-def chat_with_ai(message: str, context: list) -> str:
+def chat_with_ai(message: str, context: list, stats: dict = None) -> str:
     """Send a user message and current SOC context to Claude for an interactive chat response."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return "Claude AI is unavailable (API key not configured)."
 
-    # Format the context (e.g., recent incidents) into a string
-    context_str = json.dumps(context, indent=2) if context else "No critical incidents or logs provided."
-    
-    prompt = f"""
-    You are an expert AI SOC Analyst assistant. The user is asking a question about the current security state.
-    
-    CURRENT SOC CONTEXT (Recent incidents):
-    {context_str}
-    
-    USER QUESTION:
-    "{message}"
-    
-    Provide a concise, professional, and helpful response based ONLY on the provided context (if applicable).
-    If the context doesn't contain the answer, say "Based on the current data, I cannot determine..."
-    Use markdown for formatting if needed (like bolding IP addresses).
-    """
+    incidents_str = json.dumps(context, indent=2) if context else "No incidents recorded yet."
+
+    # Build a richer stats summary
+    stats_summary = ""
+    if stats:
+        total = stats.get("total_incidents", 0)
+        last_hour = stats.get("last_hour", 0)
+        by_sev = stats.get("by_severity", {})
+        by_type = stats.get("by_type", {})
+        top_type = max(by_type, key=by_type.get, default="N/A") if by_type else "N/A"
+        stats_summary = (
+            f"\n\nDASHBOARD STATS:\n"
+            f"- Total incidents recorded: {total}\n"
+            f"- Incidents in last hour: {last_hour}\n"
+            f"- Critical: {by_sev.get('Critical', 0)} | High: {by_sev.get('High', 0)} | "
+            f"Medium: {by_sev.get('Medium', 0)} | Low: {by_sev.get('Low', 0)}\n"
+            f"- Most common attack type: {top_type}\n"
+        )
+
+        # Detect potential APT pattern: same IP with multiple attack types
+        ip_types: dict = {}
+        for inc in context:
+            ip = inc.get("source_ip")
+            t = inc.get("threat_type")
+            if ip and t:
+                ip_types.setdefault(ip, set()).add(t)
+        apt_ips = [ip for ip, types in ip_types.items() if len(types) >= 2]
+        if apt_ips:
+            stats_summary += f"- ⚠️ Potential multi-stage attack from: {', '.join(apt_ips[:3])}\n"
+
+    prompt = f"""You are an expert AI SOC Analyst with deep knowledge of threat intelligence, MITRE ATT&CK framework, and incident response.
+{stats_summary}
+RECENT INCIDENTS (last 10):
+{incidents_str}
+
+ANALYST QUESTION: {message}
+
+Instructions:
+- Answer based on the provided data; be specific about IPs, attack types, and severity
+- Reference MITRE ATT&CK techniques where applicable (e.g., "This matches T1110 - Brute Force")
+- If you detect attack correlations or patterns across multiple incidents, highlight them
+- Provide actionable recommendations
+- If the data doesn't contain the answer, say so clearly
+- Use **bold** for IPs and technique IDs, use bullet points for multiple items"""
 
     try:
         response_text = call_claude(prompt)
@@ -670,9 +756,17 @@ def analyze_logs(logs: list) -> list:
             seen[key] = inc
 
     deduplicated = list(seen.values())
-    
-    # Get AI Insights
-    ai_insight = analyze_with_claude(logs)
+
+    # Enrich each incident with MITRE ATT&CK data
+    for inc in deduplicated:
+        mitre = MITRE_MAPPING.get(inc.get("threat_type", ""))
+        if mitre:
+            inc["mitre_tactic"] = mitre["tactic"]
+            inc["mitre_technique_id"] = mitre["technique_id"]
+            inc["mitre_technique_name"] = mitre["technique_name"]
+
+    # Get AI Insights — pass rule detections so Claude can reason on top of them
+    ai_insight = analyze_with_claude(logs, rule_detections=deduplicated)
 
     if not deduplicated:
         return [{
@@ -687,8 +781,7 @@ def analyze_logs(logs: list) -> list:
         }]
 
     # Add AI insight to the primary incident
-    if deduplicated:
-        deduplicated[0]["ai_insight"] = ai_insight
+    deduplicated[0]["ai_insight"] = ai_insight
 
     # Sort by severity (highest first)
     deduplicated.sort(key=lambda x: SEVERITY_RANK.get(x.get("severity", ""), 0), reverse=True)

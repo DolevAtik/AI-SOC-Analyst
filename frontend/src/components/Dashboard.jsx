@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import StatsCharts from './StatsCharts';
 import LogViewer from './LogViewer';
@@ -6,6 +6,7 @@ import IncidentTable from './IncidentTable';
 import AnalysisPanel from './AnalysisPanel';
 import ManualLogInput from './ManualLogInput';
 import { getStats, getIncidents, clearIncidents, getAuthToken } from '../api';
+import { useToast } from './Toast';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -18,6 +19,8 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('analysis');
   const [socket, setSocket] = useState(null);
+  const toast = useToast();
+  const notifiedIPs = useRef(new Set());
 
   useEffect(() => {
     loadStats();
@@ -47,10 +50,21 @@ export default function Dashboard() {
 
     newSocket.on('new_incidents', (data) => {
       if (data.incidents) {
-         setIncidents(prevIncidents => {
-           const newIncidents = data.incidents.map(i => ({ ...i, incident_detected: true }));
-           return [...newIncidents, ...prevIncidents].slice(0, 100); // Keep last 100 incidents
-         });
+        const newIncidents = data.incidents.map(i => ({ ...i, incident_detected: true }));
+
+        // Fire toasts for Critical / High incidents (once per IP+type combo)
+        newIncidents.forEach(inc => {
+          const key = `${inc.source_ip}-${inc.threat_type}`;
+          if ((inc.severity === 'Critical' || inc.severity === 'High') && !notifiedIPs.current.has(key)) {
+            notifiedIPs.current.add(key);
+            const type = inc.severity === 'Critical' ? 'critical' : 'high';
+            toast?.(`${inc.threat_type} from ${inc.source_ip}`, type, 7000);
+          }
+        });
+
+        setIncidents(prevIncidents => {
+          return [...newIncidents, ...prevIncidents].slice(0, 100);
+        });
       }
     });
 

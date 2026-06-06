@@ -6,6 +6,7 @@ import Reports from './components/Reports';
 import Settings from './components/Settings';
 import FloatingAgent from './components/FloatingAgent';
 import { setAuthToken } from './api';
+import { ToastProvider } from './components/Toast';
 import './index.css';
 
 const NAV_ITEMS = [
@@ -114,7 +115,7 @@ function AuthenticatedApp() {
 
 export default function App() {
   return (
-    <>
+    <ToastProvider>
       <SignedOut>
         <div style={{
           minHeight: '100vh',
@@ -139,6 +140,6 @@ export default function App() {
       <SignedIn>
         <AuthenticatedApp />
       </SignedIn>
-    </>
+    </ToastProvider>
   );
 }

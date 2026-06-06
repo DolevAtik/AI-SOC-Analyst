@@ -110,3 +110,19 @@ export async function parseRealLogs(logText) {
   if (!res.ok && res.status !== 422) throw new Error(`Parse real logs failed: ${res.status}`);
   return { ok: res.ok, status: res.status, data };
 }
+
+export async function geolocateIPs(ips) {
+  const res = await fetch(`${API_BASE}/geolocate`, {
+    method: 'POST',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ ips }),
+  });
+  if (!res.ok) throw new Error(`Geolocate failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getAttackChains(limit = 300) {
+  const res = await fetch(`${API_BASE}/attack-chains?limit=${limit}`, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`Get attack chains failed: ${res.status}`);
+  return res.json();
+}

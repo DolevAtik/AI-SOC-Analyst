@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { getIncidents, getStats, clearIncidents } from '../api';
 import StatsCharts from './StatsCharts';
 import RealLogImporter from './RealLogImporter';
+import AttackMap from './AttackMap';
+import AttackChain from './AttackChain';
 
 const SEVERITY_ORDER = { Critical: 0, High: 1, Medium: 2, Low: 3 };
 
@@ -12,9 +14,11 @@ function formatDate(ts) {
 }
 
 function exportCSV(data) {
-  const headers = ['Severity', 'Threat Type', 'Source IP', 'Summary', 'Action', 'Timestamp'];
+  const headers = ['Severity', 'Threat Type', 'Source IP', 'MITRE ID', 'MITRE Tactic', 'Summary', 'Action', 'Timestamp'];
   const rows = data.map(i => [
     i.severity, i.threat_type, i.source_ip,
+    i.mitre_technique_id || '',
+    i.mitre_tactic || '',
     `"${(i.summary || '').replace(/"/g, "'")}"`,
     `"${(i.recommended_action || '').replace(/"/g, "'")}"`,
     i.detected_at || '',
@@ -25,6 +29,100 @@ function exportCSV(data) {
   const a = document.createElement('a');
   a.href = url; a.download = `soc-report-${Date.now()}.csv`; a.click();
   URL.revokeObjectURL(url);
+}
+
+async function exportPDF(incidents, stats) {
+  const { default: jsPDF } = await import('jspdf');
+  const { default: autoTable } = await import('jspdf-autotable');
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const now = new Date().toLocaleString('en-US');
+
+  // Header
+  doc.setFillColor(10, 15, 30);
+  doc.rect(0, 0, 297, 30, 'F');
+  doc.setTextColor(0, 212, 255);
+  doc.setFontSize(18);
+  doc.setFont('helvetica', 'bold');
+  doc.text('AI SOC Analyst — Incident Report', 14, 18);
+  doc.setTextColor(150, 160, 180);
+  doc.setFontSize(9);
+  doc.text(`Generated: ${now}  |  Total incidents: ${incidents.length}`, 14, 26);
+
+  // Stats summary row
+  const critCount = incidents.filter(i => i.severity === 'Critical').length;
+  const highCount = incidents.filter(i => i.severity === 'High').length;
+  const medCount  = incidents.filter(i => i.severity === 'Medium').length;
+  const lowCount  = incidents.filter(i => i.severity === 'Low').length;
+
+  doc.setFillColor(20, 25, 45);
+  doc.rect(0, 30, 297, 18, 'F');
+  const cols = [
+    ['Total', incidents.length, [0, 212, 255]],
+    ['Critical', critCount, [255, 45, 85]],
+    ['High', highCount, [255, 149, 0]],
+    ['Medium', medCount, [251, 191, 36]],
+    ['Low', lowCount, [52, 211, 153]],
+  ];
+  cols.forEach(([label, val, color], i) => {
+    const x = 14 + i * 55;
+    doc.setTextColor(...color);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(String(val), x, 42);
+    doc.setTextColor(120, 130, 150);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(label, x, 46);
+  });
+
+  // Incidents table
+  autoTable(doc, {
+    startY: 52,
+    head: [['Severity', 'Threat Type', 'MITRE', 'Source IP', 'Summary', 'Recommended Action', 'Time']],
+    body: incidents.slice(0, 500).map(i => [
+      i.severity || '',
+      i.threat_type || '',
+      i.mitre_technique_id ? `${i.mitre_technique_id}\n${i.mitre_tactic || ''}` : '',
+      i.source_ip || '',
+      (i.summary || '').substring(0, 120),
+      (i.recommended_action || '').substring(0, 80),
+      i.detected_at ? new Date(i.detected_at).toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }) : '',
+    ]),
+    styles: { fontSize: 7.5, cellPadding: 3, textColor: [200, 210, 225], fillColor: [15, 20, 40] },
+    headStyles: { fillColor: [0, 30, 60], textColor: [0, 212, 255], fontStyle: 'bold', fontSize: 8 },
+    alternateRowStyles: { fillColor: [20, 28, 55] },
+    columnStyles: {
+      0: { cellWidth: 18, fontStyle: 'bold' },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 30, textColor: [0, 212, 255], fontStyle: 'bold', fontSize: 7 },
+      3: { cellWidth: 28, fontStyle: 'bold', textColor: [0, 212, 255] },
+      4: { cellWidth: 70 },
+      5: { cellWidth: 60 },
+      6: { cellWidth: 28 },
+    },
+    didParseCell(data) {
+      if (data.section === 'body' && data.column.index === 0) {
+        const sev = data.cell.raw;
+        if (sev === 'Critical') data.cell.styles.textColor = [255, 45, 85];
+        else if (sev === 'High')   data.cell.styles.textColor = [255, 149, 0];
+        else if (sev === 'Medium') data.cell.styles.textColor = [251, 191, 36];
+        else if (sev === 'Low')    data.cell.styles.textColor = [52, 211, 153];
+      }
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // Footer
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= pageCount; p++) {
+    doc.setPage(p);
+    doc.setTextColor(80, 90, 110);
+    doc.setFontSize(8);
+    doc.text(`AI SOC Analyst · Confidential · Page ${p} of ${pageCount}`, 14, 205);
+  }
+
+  doc.save(`soc-incident-report-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 async function reportIncident(data) {
@@ -291,7 +389,8 @@ export default function Reports() {
             🚨 Report Incident
           </button>
           <button className="btn btn-secondary btn-sm" onClick={load} id="reports-refresh">🔄 Refresh</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(filtered)} id="reports-export" disabled={filtered.length === 0}>⬇️ Export CSV</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(filtered)} id="reports-export" disabled={filtered.length === 0}>⬇️ CSV</button>
+          <button className="btn btn-primary btn-sm" onClick={() => exportPDF(filtered, stats)} id="reports-export-pdf" disabled={filtered.length === 0}>📄 Export PDF</button>
           {!confirmClear
             ? <button className="btn btn-danger btn-sm" onClick={() => setConfirmClear(true)} id="reports-clear">🗑️ Clear All</button>
             : (
@@ -361,6 +460,12 @@ export default function Reports() {
           {/* Charts */}
           <StatsCharts stats={stats} />
 
+          {/* Attack origin map */}
+          <AttackMap incidents={incidents} />
+
+          {/* Attack chains */}
+          <AttackChain />
+
           {/* Top IPs */}
           <div className="glass-card" style={{ padding: '20px 24px', marginBottom: 24 }}>
             <h3 style={{ marginBottom: 16, fontSize: '0.95rem' }}>🌐 Top Source IPs</h3>
@@ -399,6 +504,7 @@ export default function Reports() {
                   <tr>
                     <th onClick={() => handleSort('severity')} style={{ cursor: 'pointer' }}>Severity{sortIcon('severity')}</th>
                     <th onClick={() => handleSort('threat_type')} style={{ cursor: 'pointer' }}>Threat Type{sortIcon('threat_type')}</th>
+                    <th>MITRE</th>
                     <th onClick={() => handleSort('source_ip')} style={{ cursor: 'pointer' }}>Source IP{sortIcon('source_ip')}</th>
                     <th>Summary</th>
                     <th onClick={() => handleSort('detected_at')} style={{ cursor: 'pointer' }}>Time{sortIcon('detected_at')}</th>
@@ -411,7 +517,22 @@ export default function Reports() {
                       <td>
                         <span className={`severity-badge severity-${(inc.severity || '').toLowerCase()}`}>{inc.severity}</span>
                       </td>
-                      <td style={{ fontWeight: 600, fontSize: '0.85rem' }}>{inc.threat_type}</td>
+                      <td>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{inc.threat_type}</div>
+                      </td>
+                      <td>
+                        {inc.mitre_technique_id ? (
+                          <div>
+                            <span style={{
+                              fontSize: '0.7rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                              padding: '2px 6px', borderRadius: 3,
+                              background: 'rgba(0,212,255,0.08)', color: 'var(--accent-cyan)',
+                              border: '1px solid rgba(0,212,255,0.2)',
+                            }}>{inc.mitre_technique_id}</span>
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 3 }}>{inc.mitre_tactic}</div>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>}
+                      </td>
                       <td className="ip-cell">{inc.source_ip}</td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: 280 }}>{inc.summary}</td>
                       <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{formatDate(inc.detected_at)}</td>

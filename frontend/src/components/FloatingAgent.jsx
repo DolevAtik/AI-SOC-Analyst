@@ -51,29 +51,37 @@ export default function FloatingAgent() {
     setMessages(prev => [...prev, { role: 'user', text: input }]);
     setIsTyping(true);
     
-    // Fetch latest context directly from API to ensure fresh context across pages
+    // Fetch latest incidents + stats for rich AI context
     let context = [];
     try {
       const token = getAuthToken();
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/incidents?limit=10`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const data = await res.json();
-        context = (data.incidents || []).slice(0, 10).map(inc => ({
+      const base = import.meta.env.VITE_API_URL || '';
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const [incRes, statsRes] = await Promise.all([
+        fetch(`${base}/api/incidents?limit=20`, { headers }),
+        fetch(`${base}/api/stats`, { headers }),
+      ]);
+
+      if (incRes.ok) {
+        const data = await incRes.json();
+        context = (data.incidents || []).slice(0, 20).map(inc => ({
           timestamp: inc.timestamp,
           threat_type: inc.threat_type,
           severity: inc.severity,
-          source_ip: inc.source_ip
+          source_ip: inc.source_ip,
+          summary: inc.summary,
+          mitre_technique_id: inc.mitre_technique_id,
+          mitre_tactic: inc.mitre_tactic,
         }));
       }
     } catch (e) {
       console.warn("Failed to fetch context for chat", e);
     }
 
-    socket.emit('chat_message', { 
-      message: input, 
-      context: context 
+    socket.emit('chat_message', {
+      message: input,
+      context,
     });
     
     setInput('');

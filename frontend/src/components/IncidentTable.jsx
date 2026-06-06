@@ -166,7 +166,20 @@ export default function IncidentTable({ incidents }) {
                       {incident.severity}
                     </span>
                   </td>
-                  <td style={{ fontWeight: 600, fontSize: '0.85rem' }}>{incident.threat_type}</td>
+                  <td>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{incident.threat_type}</div>
+                    {incident.mitre_technique_id && (
+                      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span style={{
+                          fontSize: '0.65rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                          padding: '1px 6px', borderRadius: 3,
+                          background: 'rgba(0,212,255,0.08)', color: 'var(--accent-cyan)',
+                          border: '1px solid rgba(0,212,255,0.2)', letterSpacing: '0.03em',
+                        }}>{incident.mitre_technique_id}</span>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{incident.mitre_tactic}</span>
+                      </div>
+                    )}
+                  </td>
                   <td className="ip-cell">{incident.source_ip}</td>
                   <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', maxWidth: '350px' }}>
                     {incident.summary}

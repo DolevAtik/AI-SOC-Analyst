@@ -145,13 +145,14 @@ def handle_chat_message(data):
     """Handle incoming AI Threat Hunting Chat messages."""
     message = data.get('message', '')
     context = data.get('context', [])
-    
+
     if not message:
         return
-        
+
     from analyzer import chat_with_ai
-    response_text = chat_with_ai(message, context)
-    
+    stats = get_stats()
+    response_text = chat_with_ai(message, context, stats=stats)
+
     emit('chat_response', {'response': response_text})
 
 @app.route("/api/logs/generate", methods=["POST"])
@@ -427,6 +428,85 @@ def parse_real_logs():
         "incidents_found": sum(1 for i in incidents if i.get("incident_detected")),
         "incidents": incidents,
     })
+
+
+# ── Geolocation ───────────────────────────────────────────────────────────────
+
+@app.route("/api/geolocate", methods=["POST"])
+@require_auth
+def geolocate_ips():
+    """Geolocate a list of IPs using ip-api.com (free, no key needed)."""
+    import urllib.request as _urllib
+    import json as _json
+
+    data = request.get_json(silent=True) or {}
+    ips = list({ip.strip() for ip in data.get("ips", []) if ip and ip.strip()})[:50]
+    if not ips:
+        return jsonify({"locations": []})
+
+    try:
+        payload = _json.dumps([{"query": ip} for ip in ips]).encode()
+        req = _urllib.Request(
+            "http://ip-api.com/batch?fields=status,country,countryCode,lat,lon,query",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _urllib.urlopen(req, timeout=8) as resp:
+            locations = _json.loads(resp.read())
+        return jsonify({"locations": [l for l in locations if l.get("status") == "success"]})
+    except Exception as e:
+        logger.warning("Geolocation failed: %s", e)
+        return jsonify({"locations": [], "error": str(e)})
+
+
+# ── Attack Chains ──────────────────────────────────────────────────────────────
+
+@app.route("/api/attack-chains", methods=["GET"])
+@require_auth
+def attack_chains():
+    """Group incidents by source IP to surface multi-stage attack campaigns."""
+    from db import SEVERITY_RANK as _SEV
+
+    limit = min(int(request.args.get("limit", 300)), 500)
+    incidents = get_incidents(limit=limit)
+
+    chains: dict = {}
+    for inc in incidents:
+        ip = inc.get("source_ip")
+        if not ip:
+            continue
+        if ip not in chains:
+            chains[ip] = {
+                "ip": ip,
+                "incidents": [],
+                "severity_max": "Low",
+                "first_seen": inc.get("timestamp") or inc.get("created_at"),
+                "last_seen": inc.get("timestamp") or inc.get("created_at"),
+            }
+        chains[ip]["incidents"].append(inc)
+        ts = inc.get("timestamp") or inc.get("created_at") or ""
+        if ts > (chains[ip]["last_seen"] or ""):
+            chains[ip]["last_seen"] = ts
+        if _SEV.get(inc.get("severity", ""), 0) > _SEV.get(chains[ip]["severity_max"], 0):
+            chains[ip]["severity_max"] = inc["severity"]
+
+    # Keep only IPs with multiple attack types (true multi-stage campaigns)
+    multi_stage = []
+    for v in chains.values():
+        attack_types = list({i["threat_type"] for i in v["incidents"] if i.get("threat_type")})
+        if len(attack_types) >= 2:
+            multi_stage.append({
+                "ip": v["ip"],
+                "count": len(v["incidents"]),
+                "severity_max": v["severity_max"],
+                "attack_types": attack_types,
+                "first_seen": v["first_seen"],
+                "last_seen": v["last_seen"],
+            })
+
+    multi_stage.sort(key=lambda x: x["count"], reverse=True)
+    return jsonify({"chains": multi_stage[:20]})
 
 
 if __name__ == "__main__":
