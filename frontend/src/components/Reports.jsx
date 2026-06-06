@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import 'jspdf-autotable';
 import { getIncidents, getStats, clearIncidents } from '../api';
 import StatsCharts from './StatsCharts';
 import RealLogImporter from './RealLogImporter';
@@ -17,13 +17,11 @@ function formatDate(ts) {
 
 function exportExcel(data) {
   const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const headers = ['Severity','Threat Type','MITRE ID','MITRE Tactic','Source IP','Summary','Recommended Action','Timestamp'];
-  const widths  = [80, 160, 85, 150, 115, 400, 300, 145];
+  const headers = ['Severity','Threat Type','Source IP','Summary','Recommended Action','Timestamp'];
+  const widths  = [80, 160, 115, 460, 340, 145];
   const rows = data.map(i => [
     i.severity || '',
     i.threat_type || '',
-    i.mitre_technique_id || '',
-    i.mitre_tactic || '',
     i.source_ip || '',
     i.summary || '',
     i.recommended_action || '',
@@ -42,7 +40,7 @@ function exportExcel(data) {
         else if (cell === 'High') color = '#ff9500';
         else if (cell === 'Medium') color = '#fbbf24';
         else if (cell === 'Low') color = '#34d399';
-      } else if (ci === 2) color = '#00d4ff';
+      } else if (ci === 2) color = '#7dd3fc';
       return `<td style="background:${bg};color:${color};border:1px solid #1e2a4a;padding:5px 10px;font-family:Arial,sans-serif;font-size:11px;vertical-align:top">${esc(cell)}</td>`;
     }).join('')}</tr>`;
   }).join('');
@@ -65,6 +63,11 @@ function exportExcel(data) {
 }
 
 function exportPDF(incidents, stats) {
+  try { _runExportPDF(incidents, stats); }
+  catch (e) { console.error('PDF export error:', e); alert('PDF export failed: ' + e.message); }
+}
+
+function _runExportPDF(incidents, stats) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const now = new Date().toLocaleString('en-US');
 
@@ -107,7 +110,7 @@ function exportPDF(incidents, stats) {
   });
 
   // Incidents table
-  autoTable(doc, {
+  doc.autoTable({
     startY: 52,
     head: [['Severity', 'Threat Type', 'MITRE', 'Source IP', 'Summary', 'Recommended Action', 'Time']],
     body: incidents.slice(0, 500).map(i => [
