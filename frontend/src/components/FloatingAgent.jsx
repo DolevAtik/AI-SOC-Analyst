@@ -13,11 +13,7 @@ export default function FloatingAgent() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    // Only establish connection once
-    const newSocket = io('/'); // Let socket.io connect to the same origin with Vite proxy, or wait - Vite proxies /socket.io correctly? Let's use the explicit target.
-    // Actually the proxy target in Vite doesn't natively forward WS unless configured. Wait, earlier io('http://localhost:5000') was used.
-    // Let's use standard URL logic: process.env or just hardcoded as before.
-    const wsUrl = 'http://localhost:5000'; // Fallback for local dev through exposed docker port
+    const wsUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
     const s = io(wsUrl);
     setSocket(s);
 
@@ -57,7 +53,7 @@ export default function FloatingAgent() {
     // Fetch latest context directly from API to ensure fresh context across pages
     let context = [];
     try {
-      const res = await fetch('/api/incidents?limit=10');
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/incidents?limit=10`);
       if (res.ok) {
         const data = await res.json();
         context = (data.incidents || []).slice(0, 10).map(inc => ({
