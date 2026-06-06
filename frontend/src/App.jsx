@@ -63,7 +63,7 @@ function AuthenticatedApp() {
         </nav>
 
         {/* Status indicator */}
-        <div style={{
+        <div className="sidebar-status" style={{
           marginTop: 'auto',
           padding: '14px',
           background: 'rgba(52, 211, 153, 0.06)',
@@ -88,7 +88,7 @@ function AuthenticatedApp() {
         </div>
 
         {/* User profile button */}
-        <div style={{ padding: '12px 14px' }}>
+        <div className="sidebar-user" style={{ padding: '12px 14px' }}>
           <UserButton
             appearance={{
               elements: {
