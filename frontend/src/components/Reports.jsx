@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { getIncidents, getStats, clearIncidents } from '../api';
 import StatsCharts from './StatsCharts';
 import RealLogImporter from './RealLogImporter';
@@ -13,28 +15,56 @@ function formatDate(ts) {
   catch { return ts; }
 }
 
-function exportCSV(data) {
-  const headers = ['Severity', 'Threat Type', 'Source IP', 'MITRE ID', 'MITRE Tactic', 'Summary', 'Action', 'Timestamp'];
+function exportExcel(data) {
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const headers = ['Severity','Threat Type','MITRE ID','MITRE Tactic','Source IP','Summary','Recommended Action','Timestamp'];
+  const widths  = [80, 160, 85, 150, 115, 400, 300, 145];
   const rows = data.map(i => [
-    i.severity, i.threat_type, i.source_ip,
+    i.severity || '',
+    i.threat_type || '',
     i.mitre_technique_id || '',
     i.mitre_tactic || '',
-    `"${(i.summary || '').replace(/"/g, "'")}"`,
-    `"${(i.recommended_action || '').replace(/"/g, "'")}"`,
-    i.detected_at || '',
+    i.source_ip || '',
+    i.summary || '',
+    i.recommended_action || '',
+    i.detected_at ? new Date(i.detected_at).toLocaleString('en-US', { dateStyle:'short', timeStyle:'short' }) : '',
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const colsHtml = widths.map(w => `<col width="${w}px">`).join('');
+  const headHtml = headers.map(h =>
+    `<th style="background:#0a1628;color:#00d4ff;font-weight:bold;border:1px solid #1e3a5a;padding:7px 10px;white-space:nowrap;font-family:Arial,sans-serif;font-size:12px">${h}</th>`
+  ).join('');
+  const bodyHtml = rows.map((row, ri) => {
+    const bg = ri % 2 === 0 ? '#0f172a' : '#131e35';
+    return `<tr>${row.map((cell, ci) => {
+      let color = '#c8d2e1';
+      if (ci === 0) {
+        if (cell === 'Critical') color = '#ff2d55';
+        else if (cell === 'High') color = '#ff9500';
+        else if (cell === 'Medium') color = '#fbbf24';
+        else if (cell === 'Low') color = '#34d399';
+      } else if (ci === 2) color = '#00d4ff';
+      return `<td style="background:${bg};color:${color};border:1px solid #1e2a4a;padding:5px 10px;font-family:Arial,sans-serif;font-size:11px;vertical-align:top">${esc(cell)}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
+  const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta charset="UTF-8">
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>SOC Incidents</x:Name>
+<x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+</x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+</head><body>
+<table><colgroup>${colsHtml}</colgroup>
+<thead><tr>${headHtml}</tr></thead>
+<tbody>${bodyHtml}</tbody>
+</table></body></html>`;
+  const blob = new Blob(['﻿' + html], { type: 'application/vnd.ms-excel;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `soc-report-${Date.now()}.csv`; a.click();
+  a.href = url; a.download = `soc-report-${new Date().toISOString().slice(0,10)}.xls`; a.click();
   URL.revokeObjectURL(url);
 }
 
-async function exportPDF(incidents, stats) {
-  const { default: jsPDF } = await import('jspdf');
-  const { default: autoTable } = await import('jspdf-autotable');
-
+function exportPDF(incidents, stats) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const now = new Date().toLocaleString('en-US');
 
@@ -389,7 +419,7 @@ export default function Reports() {
             🚨 Report Incident
           </button>
           <button className="btn btn-secondary btn-sm" onClick={load} id="reports-refresh">🔄 Refresh</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => exportCSV(filtered)} id="reports-export" disabled={filtered.length === 0}>⬇️ CSV</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => exportExcel(filtered)} id="reports-export" disabled={filtered.length === 0}>📊 Excel</button>
           <button className="btn btn-primary btn-sm" onClick={() => exportPDF(filtered, stats)} id="reports-export-pdf" disabled={filtered.length === 0}>📄 Export PDF</button>
           {!confirmClear
             ? <button className="btn btn-danger btn-sm" onClick={() => setConfirmClear(true)} id="reports-clear">🗑️ Clear All</button>
