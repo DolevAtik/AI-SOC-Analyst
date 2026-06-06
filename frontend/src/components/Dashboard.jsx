@@ -24,6 +24,8 @@ export default function Dashboard() {
   const notifiedIPs = useRef(new Set());
   const [currentScenario, setCurrentScenario] = useState('random');
   const [phaseInfo, setPhaseInfo] = useState(null);
+  const [activeSeverity, setActiveSeverity] = useState(null);
+  const [activeType, setActiveType] = useState(null);
 
   useEffect(() => {
     loadStats();
@@ -239,8 +241,44 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Charts */}
-      <StatsCharts stats={stats} />
+      {/* Charts — interactive, click-to-filter */}
+      <StatsCharts
+        stats={stats}
+        activeSeverity={activeSeverity}
+        activeType={activeType}
+        onSeverityClick={sev => { setActiveSeverity(sev); setActiveType(null); setActiveTab('analysis'); }}
+        onTypeClick={type => { setActiveType(type); setActiveSeverity(null); setActiveTab('analysis'); }}
+      />
+
+      {/* Active filter chips */}
+      {(activeSeverity || activeType) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Active filter:</span>
+          {activeSeverity && (
+            <span style={{
+              fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+              background: 'rgba(255,45,85,0.1)', border: '1px solid rgba(255,45,85,0.3)',
+              color: '#ff2d55', cursor: 'pointer',
+            }} onClick={() => setActiveSeverity(null)}>
+              {activeSeverity} ✕
+            </span>
+          )}
+          {activeType && (
+            <span style={{
+              fontSize: '0.72rem', fontWeight: 700, padding: '3px 10px', borderRadius: 20,
+              background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.25)',
+              color: 'var(--accent-cyan)', cursor: 'pointer',
+            }} onClick={() => setActiveType(null)}>
+              {activeType} ✕
+            </span>
+          )}
+          <button onClick={() => { setActiveSeverity(null); setActiveType(null); }} style={{
+            fontSize: '0.68rem', padding: '2px 8px', borderRadius: 10,
+            background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+            color: 'var(--text-muted)', cursor: 'pointer',
+          }}>Clear all</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '20px' }}>
@@ -262,7 +300,7 @@ export default function Dashboard() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'analysis' && <AnalysisPanel incidents={incidents} loading={isStreaming && incidents.length === 0} socket={socket} />}
+      {activeTab === 'analysis' && <AnalysisPanel incidents={incidents} loading={isStreaming && incidents.length === 0} activeSeverity={activeSeverity} activeType={activeType} />}
       {activeTab === 'manual' && <ManualLogInput />}
       {activeTab === 'logs' && <LogViewer logs={logs} />}
       {activeTab === 'incidents' && <IncidentTable incidents={incidents} />}
