@@ -5,9 +5,9 @@ import LogViewer from './LogViewer';
 import IncidentTable from './IncidentTable';
 import AnalysisPanel from './AnalysisPanel';
 import ManualLogInput from './ManualLogInput';
-import { getStats, getIncidents, clearIncidents } from '../api';
+import { getStats, getIncidents, clearIncidents, getAuthToken } from '../api';
 
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+const SOCKET_SERVER_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export default function Dashboard() {
   const [logs, setLogs] = useState([]);
@@ -24,7 +24,8 @@ export default function Dashboard() {
     loadIncidents();
 
     // Initialize Socket Connection
-    const newSocket = io(SOCKET_SERVER_URL);
+    const token = getAuthToken();
+    const newSocket = io(SOCKET_SERVER_URL, token ? { query: { token } } : {});
     setSocket(newSocket);
 
     newSocket.on('connect', () => {

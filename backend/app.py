@@ -36,7 +36,7 @@ app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', os.urandom(32).hex())
 
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
 CORS(app, resources={r"/*": {"origins": _cors_origins}})
-socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode='gevent')
 
 limiter = Limiter(
     get_remote_address,

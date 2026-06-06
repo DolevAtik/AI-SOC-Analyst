@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { getAuthToken } from '../api';
 
 export default function FloatingAgent() {
   const [isOpen, setIsOpen] = useState(false);
@@ -53,7 +54,10 @@ export default function FloatingAgent() {
     // Fetch latest context directly from API to ensure fresh context across pages
     let context = [];
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/incidents?limit=10`);
+      const token = getAuthToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/incidents?limit=10`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         context = (data.incidents || []).slice(0, 10).map(inc => ({
