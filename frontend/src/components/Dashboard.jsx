@@ -92,7 +92,7 @@ export default function Dashboard() {
     return () => {
       newSocket.disconnect();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadStats = async () => {
     try {

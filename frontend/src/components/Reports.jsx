@@ -61,7 +61,7 @@ function exportExcel(data) {
   URL.revokeObjectURL(url);
 }
 
-function exportPDF(incidents, stats) {
+function exportPDF(incidents) {
   try { _runExportPDF(incidents); }
   catch (e) { console.error('PDF export error:', e); alert('PDF export failed: ' + e.message); }
 }
@@ -422,7 +422,7 @@ export default function Reports() {
           </button>
           <button className="btn btn-secondary btn-sm" onClick={load} id="reports-refresh">🔄 Refresh</button>
           <button className="btn btn-secondary btn-sm" onClick={() => exportExcel(filtered)} id="reports-export" disabled={filtered.length === 0}>📊 Excel</button>
-          <button className="btn btn-primary btn-sm" onClick={() => exportPDF(filtered, stats)} id="reports-export-pdf" disabled={filtered.length === 0}>📄 Export PDF</button>
+          <button className="btn btn-primary btn-sm" onClick={() => exportPDF(filtered)} id="reports-export-pdf" disabled={filtered.length === 0}>📄 Export PDF</button>
           {!confirmClear
             ? <button className="btn btn-danger btn-sm" onClick={() => setConfirmClear(true)} id="reports-clear">🗑️ Clear All</button>
             : (
