@@ -29,38 +29,7 @@ export default function IncidentTable({ incidents }) {
   const [sortField, setSortField]           = useState('severity');
   const [sortDir, setSortDir]               = useState('desc');
 
-  if (!incidents || incidents.length === 0) {
-    return (
-      <div className="glass-card">
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)' }}>
-          <h3>🔍 Detected Incidents</h3>
-        </div>
-        <div className="empty-state">
-          <div className="empty-icon">✅</div>
-          <p>No incidents detected yet. Generate and analyze logs to start threat detection.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const realIncidents = incidents.filter(i => i.incident_detected);
-
-  if (realIncidents.length === 0) {
-    return (
-      <div className="glass-card">
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)' }}>
-          <h3>🔍 Detected Incidents</h3>
-        </div>
-        <div className="empty-state">
-          <div className="empty-icon">🛡️</div>
-          <p>All clear! No threats detected in the analyzed logs.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const severities  = [...new Set(realIncidents.map(i => i.severity).filter(Boolean))].sort((a, b) => (SEVERITY_ORDER[b] ?? 0) - (SEVERITY_ORDER[a] ?? 0));
-  const threatTypes = [...new Set(realIncidents.map(i => i.threat_type).filter(Boolean))].sort();
+  const realIncidents = (incidents || []).filter(i => i.incident_detected);
 
   const filtered = useMemo(() => {
     let list = realIncidents;
@@ -80,6 +49,37 @@ export default function IncidentTable({ incidents }) {
       return 0;
     });
   }, [realIncidents, severityFilter, typeFilter, sortField, sortDir]);
+
+  if (!incidents || incidents.length === 0) {
+    return (
+      <div className="glass-card">
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)' }}>
+          <h3>🔍 Detected Incidents</h3>
+        </div>
+        <div className="empty-state">
+          <div className="empty-icon">✅</div>
+          <p>No incidents detected yet. Generate and analyze logs to start threat detection.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (realIncidents.length === 0) {
+    return (
+      <div className="glass-card">
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--bg-glass-border)' }}>
+          <h3>🔍 Detected Incidents</h3>
+        </div>
+        <div className="empty-state">
+          <div className="empty-icon">🛡️</div>
+          <p>All clear! No threats detected in the analyzed logs.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const severities  = [...new Set(realIncidents.map(i => i.severity).filter(Boolean))].sort((a, b) => (SEVERITY_ORDER[b] ?? 0) - (SEVERITY_ORDER[a] ?? 0));
+  const threatTypes = [...new Set(realIncidents.map(i => i.threat_type).filter(Boolean))].sort();
 
   const toggleSort = (field) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');

@@ -62,11 +62,11 @@ function exportExcel(data) {
 }
 
 function exportPDF(incidents, stats) {
-  try { _runExportPDF(incidents, stats); }
+  try { _runExportPDF(incidents); }
   catch (e) { console.error('PDF export error:', e); alert('PDF export failed: ' + e.message); }
 }
 
-function _runExportPDF(incidents, stats) {
+function _runExportPDF(incidents) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const now = new Date().toLocaleString('en-US');
 
@@ -199,7 +199,7 @@ function ReportModal({ onClose, onSuccess }) {
     try {
       await reportIncident(form);
       onSuccess();
-    } catch (err) {
+    } catch {
       setError('Failed to submit incident. Is the backend running?');
     } finally {
       setSubmitting(false);

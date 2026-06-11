@@ -53,8 +53,6 @@ export default function StatsCharts({ stats, activeSeverity, activeType, onSever
   // ── Bar chart ─────────────────────────────────────────────────────────────
   const typeEntries = Object.entries(types).sort((a, b) => b[1] - a[1]);
   const maxType     = typeEntries[0]?.[1] || 1;
-  const activeBar   = hoveredType || activeType;
-
   return (
     <div className="charts-grid">
 

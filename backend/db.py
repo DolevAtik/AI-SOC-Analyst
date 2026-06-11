@@ -81,7 +81,7 @@ def init_db():
     cur = _cursor(conn)
 
     if _MODE == "postgres":
-        cur.execute(f"""
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS incidents (
                 id          SERIAL PRIMARY KEY,
                 timestamp   TEXT NOT NULL,
@@ -97,7 +97,7 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_severity    ON incidents(severity)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_threat_type ON incidents(threat_type)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_timestamp   ON incidents(timestamp)")
-        cur.execute(f"""
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS blocklist (
                 id       SERIAL PRIMARY KEY,
                 ip       TEXT NOT NULL UNIQUE,

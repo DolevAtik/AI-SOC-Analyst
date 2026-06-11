@@ -3,7 +3,6 @@ Flask REST API for the AI SOC Analyst.
 Provides endpoints for log generation, analysis, incident management, and dashboard statistics.
 """
 import os
-import json
 import time
 import logging
 
@@ -27,7 +26,7 @@ logger = logging.getLogger("soc_analyst")
 
 from db import init_db, save_incident, get_incidents, get_stats, clear_incidents, get_blocklist, set_blocklist
 from log_generator import generate_log_batch
-from analyzer import analyze_logs, analyze_manual_log
+from analyzer import analyze_logs
 from windows_event_reader import read_new_security_events, is_available as win_reader_available
 from auth import require_auth, verify_token
 
@@ -57,8 +56,6 @@ _scenario_runner      = None           # ScenarioRunner instance when active
 
 def background_streamer():
     """Background thread that continuously generates and analyzes logs."""
-    global streaming_active, current_attack_ratio, source_mode
-
     with app.app_context():
         while True:
             try:

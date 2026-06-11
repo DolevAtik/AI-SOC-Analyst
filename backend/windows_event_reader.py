@@ -16,7 +16,6 @@ from typing import Optional
 
 try:
     import win32evtlog
-    import win32con
     PYWIN32_AVAILABLE = True
 except ImportError:
     PYWIN32_AVAILABLE = False

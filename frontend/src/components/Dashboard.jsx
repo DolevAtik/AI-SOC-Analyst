@@ -98,7 +98,7 @@ export default function Dashboard() {
     try {
       const res = await getStats();
       setStats(res.stats);
-    } catch (err) {
+    } catch {
       /* stats may fail if backend is not running */
     }
   };
@@ -109,7 +109,7 @@ export default function Dashboard() {
       if (res.incidents && res.incidents.length > 0) {
         setIncidents(res.incidents.map(i => ({ ...i, incident_detected: true })));
       }
-    } catch (err) {
+    } catch {
       /* incidents may fail if backend is not running */
     }
   };

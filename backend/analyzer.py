@@ -9,7 +9,7 @@ import time
 import hashlib
 import anthropic
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime
 
 # Import shared severity rank and blocklist helpers from db layer
 from db import SEVERITY_RANK, get_blocklist
@@ -221,7 +221,6 @@ def detect_brute_force(logs: list) -> list:
             )
 
         # Check if any attempt succeeded after failures (account compromise)
-        last_log = failed_logs[-1]
         if any(l.get("status_code") == 200 for l in failed_logs):
             severity = "Critical"
             summary += " WARNING: A successful login was detected after multiple failures — possible account compromise."
@@ -279,7 +278,7 @@ def detect_sql_injection(logs: list) -> list:
         for agent_keyword in MALICIOUS_AGENTS:
             if any(agent_keyword in a for a in agents):
                 severity = "Critical"
-                summary += f" Automated attack tool detected in user agent."
+                summary += " Automated attack tool detected in user agent."
                 break
 
         sample_path = sqli_logs[0].get("path", "")

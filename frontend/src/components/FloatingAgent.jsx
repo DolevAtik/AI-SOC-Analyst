@@ -58,7 +58,7 @@ export default function FloatingAgent() {
       const base = import.meta.env.VITE_API_URL || '';
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const [incRes, statsRes] = await Promise.all([
+      const [incRes] = await Promise.all([
         fetch(`${base}/api/incidents?limit=20`, { headers }),
         fetch(`${base}/api/stats`, { headers }),
       ]);

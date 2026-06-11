@@ -179,7 +179,6 @@ export default function RealLogImporter() {
                 <div key={idx} style={{
                   padding: '14px 16px', borderRadius: 'var(--radius-sm)',
                   background: 'rgba(255,255,255,0.03)',
-                  borderLeft: `3px solid ${SEVERITY_COLOR[inc.severity] || 'var(--text-muted)'}`,
                   border: `1px solid var(--bg-glass-border)`,
                   borderLeft: `3px solid ${SEVERITY_COLOR[inc.severity] || 'var(--text-muted)'}`,
                 }}>
