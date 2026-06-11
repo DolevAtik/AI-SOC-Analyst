@@ -62,7 +62,11 @@ MITRE_MAPPING = {
     },
 }
 
-def call_claude(prompt: str, retries: int = 3) -> str:
+BATCH_MODEL = "claude-haiku-4-5"      # high-frequency automated summaries
+ANALYSIS_MODEL = "claude-sonnet-4-6"  # manual / interactive use
+
+
+def call_claude(prompt: str, retries: int = 3, model: str = ANALYSIS_MODEL) -> str:
     """Call Claude API with exponential backoff on transient errors."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -74,7 +78,7 @@ def call_claude(prompt: str, retries: int = 3) -> str:
     for attempt in range(retries):
         try:
             message = client.messages.create(
-                model="claude-opus-4-8",
+                model=model,
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -621,7 +625,7 @@ Provide a concise 2-3 sentence threat intelligence summary:
 Be direct and professional. No disclaimers."""
 
     try:
-        response_text = call_claude(prompt)
+        response_text = call_claude(prompt, model=BATCH_MODEL)
         result = response_text.strip()
         _ai_cache[cache_key] = (result, now + CACHE_TTL)
         return result
