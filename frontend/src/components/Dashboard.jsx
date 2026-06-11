@@ -27,6 +27,26 @@ export default function Dashboard() {
   const [activeSeverity, setActiveSeverity] = useState(null);
   const [activeType, setActiveType] = useState(null);
 
+  const loadStats = async () => {
+    try {
+      const res = await getStats();
+      setStats(res.stats);
+    } catch {
+      /* stats may fail if backend is not running */
+    }
+  };
+
+  const loadIncidents = async () => {
+    try {
+      const res = await getIncidents();
+      if (res.incidents && res.incidents.length > 0) {
+        setIncidents(res.incidents.map(i => ({ ...i, incident_detected: true })));
+      }
+    } catch {
+      /* incidents may fail if backend is not running */
+    }
+  };
+
   useEffect(() => {
     loadStats();
     loadIncidents();
@@ -93,26 +113,6 @@ export default function Dashboard() {
       newSocket.disconnect();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const loadStats = async () => {
-    try {
-      const res = await getStats();
-      setStats(res.stats);
-    } catch {
-      /* stats may fail if backend is not running */
-    }
-  };
-
-  const loadIncidents = async () => {
-    try {
-      const res = await getIncidents();
-      if (res.incidents && res.incidents.length > 0) {
-        setIncidents(res.incidents.map(i => ({ ...i, incident_detected: true })));
-      }
-    } catch {
-      /* incidents may fail if backend is not running */
-    }
-  };
 
   const toggleStream = () => {
     if (!socket) return;
