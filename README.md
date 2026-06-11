@@ -71,17 +71,18 @@ cd frontend && npm install && npm run dev
 ## 🐳 Docker
 
 ```bash
+# Pull images from Docker Hub
+docker pull dolevatik/soc-analyst-backend:latest
+docker pull dolevatik/soc-analyst-frontend:latest
+
 # Production (nginx + prebuilt images)
 docker compose up
+# → http://localhost
 
 # Development (hot reload)
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+# → http://localhost:5173
 ```
-
-| Service | URL |
-|---|---|
-| Frontend | http://localhost |
-| Backend API | http://localhost:5000 |
 
 Images on Docker Hub:
 [`dolevatik/soc-analyst-backend`](https://hub.docker.com/r/dolevatik/soc-analyst-backend) ·
@@ -124,22 +125,35 @@ Instead of simulated logs, the backend can read your machine's actual **Windows 
 | 4672 | Special privileges assigned | Unauthorized Access |
 | 4776 | NTLM credential validation | Brute Force |
 
-### Requirements
-- `pip install pywin32`
-- Backend must run as **Administrator** (the Security log is restricted)
-
 ### How to start
 
+**1. Install pywin32** (once)
 ```powershell
-# Open an elevated PowerShell
-Start-Process powershell -Verb RunAs
+pip install pywin32
+```
 
-# In the new Admin window:
+**2. Run the backend as Administrator**
+```powershell
+Start-Process powershell -Verb RunAs
+```
+In the new Admin window:
+```powershell
 cd "C:\path\to\AI-SOC-Analyst\backend"
 py app.py
 ```
 
-Then switch the dashboard source mode to **Real Windows**.
+**3. Run the frontend** (in a separate terminal, no Admin needed)
+```powershell
+cd "C:\path\to\AI-SOC-Analyst\frontend"
+npm run dev
+# → http://localhost:5173
+```
+
+**4. Switch source mode in the dashboard**
+
+Go to the dashboard → click **Source Mode** → select **Real Windows**
+
+From this point, every real event on your machine (logons, failures, lockouts) flows through the detection engine and appears as an incident.
 
 ### 🧪 Test examples
 
