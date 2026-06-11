@@ -1010,6 +1010,7 @@ option {
   height: 520px;
   display: flex;
   flex-direction: column;
+  background: rgba(10, 15, 28, 0.92) !important;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 243, 255, 0.1);
   transform-origin: bottom right;
   border: 1px solid var(--bg-glass-border);
@@ -1124,8 +1125,8 @@ option {
 
 .ai-bubble {
   align-self: flex-start;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--bg-glass-border);
+  background: rgba(30, 41, 59, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   color: var(--text-primary);
   border-bottom-left-radius: 4px;
   backdrop-filter: blur(10px);
